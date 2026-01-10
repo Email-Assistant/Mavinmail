@@ -4,7 +4,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import {
     LayoutDashboard,
     Users,
@@ -89,6 +89,9 @@ export function MobileSidebar({ activeView, onViewChange }: { activeView: string
                 </Button>
             </SheetTrigger>
             <SheetContent side="left" className="p-0 bg-sidebar border-sidebar-border w-64 text-sidebar-foreground">
+                <SheetHeader className="sr-only">
+                    <SheetTitle>Navigation Menu</SheetTitle>
+                </SheetHeader>
                 <Sidebar
                     activeView={activeView}
                     onViewChange={(view) => {

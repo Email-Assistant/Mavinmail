@@ -488,6 +488,8 @@ function ChatScreen({ isLoggedIn, onLoginClick, activeConversationId, onConversa
           )}
         </div>
 
+        {renderActiveView()} 
+
         {messages.map((msg) => (
           <ChatMessage key={msg.id} message={msg} />
         ))}
@@ -511,7 +513,7 @@ function ChatScreen({ isLoggedIn, onLoginClick, activeConversationId, onConversa
         )}
 
 
-        {renderActiveView()}
+        
       </main>
 
       {/* --- FOOTER REMAINS THE SAME --- */}

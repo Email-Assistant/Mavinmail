@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useSearchParams } from "next/navigation"
 import { Sidebar } from "@/components/layout/Sidebar"
 import { TopNav } from "@/components/layout/TopNav"
 import { DashboardView } from "./components/DashboardView"
@@ -11,8 +12,18 @@ import { SubscriptionView } from "./components/SubscriptionView"
 import { SupportView } from "./components/SupportView"
 
 export default function DashboardPage() {
+    const searchParams = useSearchParams()
     const [activeView, setActiveView] = React.useState("dashboard")
     const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false)
+
+    // Handle OAuth callback redirect - automatically show accounts view
+    React.useEffect(() => {
+        const success = searchParams.get("success")
+        const error = searchParams.get("error")
+        if (success === "gmail_connected" || error) {
+            setActiveView("accounts")
+        }
+    }, [searchParams])
 
     const renderView = () => {
         switch (activeView) {

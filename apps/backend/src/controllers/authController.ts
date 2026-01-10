@@ -86,10 +86,14 @@ export const handleGoogleCallback = async (req: Request, res: Response) => {
     });
 
     // Redirect user back to the dashboard with a success message
-    res.redirect('http://localhost:3000/dashboard?success=gmail_connected');
+    // Support both old dashboard (3000) and new dashboard-static
+    // Use environment variable if set, otherwise default to new dashboard
+    const dashboardUrl = process.env.DASHBOARD_URL || 'http://localhost:3000';
+    res.redirect(`${dashboardUrl}/dashboard?success=gmail_connected`);
 
   } catch (error) {
     console.error('Google callback error:', error);
-    res.redirect('http://localhost:3000/dashboard?error=auth_failed');
+    const dashboardUrl = process.env.DASHBOARD_URL || 'http://localhost:3000';
+    res.redirect(`${dashboardUrl}/dashboard?error=auth_failed`);
   }
 };

@@ -13,11 +13,12 @@ app.use(
   cors({
     origin: [
       'http://localhost:3002', // Your Next.js frontend
-      'http://localhost:3000', // Dashboard
+      'http://localhost:3000', // Dashboard / Dashboard-static (Next.js default port)
       extensionOrigin,       // Your Chrome Extension
       'http://localhost:5173', // Vite dev server
     ],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-model-id'],
+    credentials: true,
   })
 );
 
