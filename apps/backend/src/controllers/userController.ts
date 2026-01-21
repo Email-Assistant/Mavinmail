@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { decrypt } from '../services/encryptionService.js';
 import { google } from 'googleapis';
+import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
@@ -110,5 +111,132 @@ export const updatePreferences = async (req: any, res: Response) => {
   } catch (error) {
     console.error('Error updating preferences:', error);
     res.status(500).json({ message: 'Failed to update preferences' });
+  }
+};
+
+// ====================================================================
+// =====> User Profile Handlers <=====
+// ====================================================================
+
+/**
+ * GET /api/user/profile
+ * Returns the user's profile information (firstName, lastName, email)
+ */
+export const getProfile = async (req: any, res: Response) => {
+  const userId = req.user.userId;
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: Number(userId) },
+      select: {
+        firstName: true,
+        lastName: true,
+        email: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.status(200).json({
+      firstName: user.firstName || '',
+      lastName: user.lastName || '',
+      email: user.email,
+    });
+  } catch (error) {
+    console.error('Error fetching profile:', error);
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+};
+
+/**
+ * PUT /api/user/profile
+ * Updates the user's profile information
+ * - firstName and lastName can be updated directly
+ * - Email change requires currentPassword for security
+ */
+export const updateProfile = async (req: any, res: Response) => {
+  const userId = req.user.userId;
+  const { firstName, lastName, email, currentPassword } = req.body;
+
+  try {
+    // Fetch current user data
+    const user = await prisma.user.findUnique({
+      where: { id: Number(userId) },
+      select: {
+        email: true,
+        password: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Build the update data
+    const updateData: { firstName?: string; lastName?: string; email?: string } = {};
+
+    // Always allow firstName/lastName updates
+    if (firstName !== undefined) updateData.firstName = firstName;
+    if (lastName !== undefined) updateData.lastName = lastName;
+
+    // Handle email change with security verification
+    if (email && email !== user.email) {
+      // Password is required to change email
+      if (!currentPassword) {
+        return res.status(400).json({
+          error: 'Password required to change email',
+          code: 'PASSWORD_REQUIRED'
+        });
+      }
+
+      // Verify the password
+      const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          error: 'Invalid password',
+          code: 'INVALID_PASSWORD'
+        });
+      }
+
+      // Check if new email is already taken
+      const existingUser = await prisma.user.findUnique({
+        where: { email: email },
+      });
+
+      if (existingUser) {
+        return res.status(409).json({
+          error: 'Email already in use',
+          code: 'EMAIL_TAKEN'
+        });
+      }
+
+      updateData.email = email;
+      console.log(`📧 Email change requested for user ${userId}: ${user.email} → ${email}`);
+    }
+
+    // Perform the update
+    const updatedUser = await prisma.user.update({
+      where: { id: Number(userId) },
+      data: updateData,
+      select: {
+        firstName: true,
+        lastName: true,
+        email: true,
+      },
+    });
+
+    console.log(`✅ Profile updated for user ${userId}`);
+
+    res.status(200).json({
+      success: true,
+      firstName: updatedUser.firstName || '',
+      lastName: updatedUser.lastName || '',
+      email: updatedUser.email,
+    });
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 };

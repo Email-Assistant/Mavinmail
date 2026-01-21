@@ -1,5 +1,12 @@
 import { Router } from 'express';
-import { getConnectionStatus, disconnectGoogleAccount } from '../controllers/userController.js';
+import {
+    getConnectionStatus,
+    disconnectGoogleAccount,
+    getPreferences,
+    updatePreferences,
+    getProfile,
+    updateProfile
+} from '../controllers/userController.js';
 import { authMiddleware } from '../middleware/authMiddleware.js';
 
 const router = Router();
@@ -14,14 +21,23 @@ router.get('/connection-status', getConnectionStatus);
 router.delete('/connections/google', disconnectGoogleAccount);
 
 // ====================================================================
-// =====> NEW: Routes for User Preferences <=====
+// =====> Routes for User Preferences <=====
 // ====================================================================
-import { getPreferences, updatePreferences } from '../controllers/userController.js';
 
 // GET /api/user/preferences
 router.get('/preferences', getPreferences);
 
 // PUT /api/user/preferences
 router.put('/preferences', updatePreferences);
+
+// ====================================================================
+// =====> Routes for User Profile <=====
+// ====================================================================
+
+// GET /api/user/profile - Fetch user profile
+router.get('/profile', getProfile);
+
+// PUT /api/user/profile - Update user profile (secure email change)
+router.put('/profile', updateProfile);
 
 export default router;

@@ -479,10 +479,10 @@ function ChatScreen({ isLoggedIn, onLoginClick, activeConversationId, onConversa
             </>
           )}
 
-          <button className="px-3 sm:px-3.5 lg:px-4 py-2 sm:py-2.5 bg-[#171717] hover:bg-[#262626] rounded-lg transition-colors text-xs sm:text-sm lg:text-base font-medium flex items-center gap-2 border border-[#262626] hover:border-[#22d3ee] w-full text-left">
+          {/* <button className="px-3 sm:px-3.5 lg:px-4 py-2 sm:py-2.5 bg-[#171717] hover:bg-[#262626] rounded-lg transition-colors text-xs sm:text-sm lg:text-base font-medium flex items-center gap-2 border border-[#262626] hover:border-[#22d3ee] w-full text-left">
             <span className="text-[#22d3ee] text-xs sm:text-sm">✦</span> Write a professional
             apology email.
-          </button>
+          </button> */}
           {/* --- REPLACE THE OLD BUTTON WITH THE NEW ONE --- */}
           {isLoggedIn && (
             <button

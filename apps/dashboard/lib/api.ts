@@ -352,18 +352,63 @@ export const getUsageTrends = async (days: number = 7): Promise<UsageTrend[]> =>
   }
 };
 
+// ====================================================================
+// User Profile API Functions
+// ====================================================================
+
+export interface UserProfile {
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+export interface UpdateProfileData {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  currentPassword?: string; // Required when changing email
+}
+
 /**
  * Get user profile information
  */
-export const getUserProfile = async (): Promise<{ email: string; name?: string }> => {
+export const getUserProfile = async (): Promise<UserProfile> => {
   try {
     const response = await api.get('/user/profile');
-    return response.data;
+    return {
+      firstName: response.data.firstName || '',
+      lastName: response.data.lastName || '',
+      email: response.data.email || '',
+    };
   } catch (error: any) {
     console.warn('User profile endpoint unavailable:', error.message);
-    return { email: 'user@example.com', name: 'User' };
+    return { firstName: '', lastName: '', email: 'user@example.com' };
+  }
+};
+
+/**
+ * Update user profile information
+ * Note: Email changes require currentPassword for security
+ */
+export const updateUserProfile = async (data: UpdateProfileData): Promise<{
+  success: boolean;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  error?: string;
+  code?: string;
+}> => {
+  try {
+    const response = await api.put('/user/profile', data);
+    return response.data;
+  } catch (error: any) {
+    const errorData = error.response?.data || {};
+    return {
+      success: false,
+      error: errorData.error || 'Failed to update profile',
+      code: errorData.code,
+    };
   }
 };
 
 export default api;
-
