@@ -77,4 +77,8 @@ app.use('/api/dashboard', dashboardRoutes);
 import taskRoutes from './routes/tasks.js';
 app.use('/api/tasks', taskRoutes);
 
+// Admin routes for user management and platform stats
+import adminRoutes from './routes/adminRoutes.js';
+app.use('/api/admin', adminRoutes);
+
 export default app;

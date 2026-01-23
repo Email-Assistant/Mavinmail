@@ -13,6 +13,12 @@ model User {
   password  String
   firstName String?
   lastName  String?
+  
+  // Role-Based Access Control
+  role        String   @default("USER")  // USER, ADMIN, SUPER_ADMIN
+  isActive    Boolean  @default(true)
+  lastLoginAt DateTime?
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -24,6 +30,12 @@ model User {
   syncHistory  SyncHistory[]
   settings     UserSettings?
   scheduledTasks ScheduledTask[]
+  
+  // Admin audit logs (actions performed by this user)
+  auditLogs AuditLog[]
+  
+  @@index([role])
+  @@index([isActive])
 }
 
 model ConnectedAccount {
@@ -109,4 +121,26 @@ model ScheduledTask {
 
   @@index([userId])
   @@index([status])
+}
+
+// ============================================================================
+// ADMIN & AUDIT MODELS
+// ============================================================================
+
+// Track all admin actions for security audit
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  actorId    Int      // Admin user who performed action
+  action     String   // "USER_SUSPENDED", "ROLE_CHANGED", "USER_DELETED", etc.
+  targetType String   // "USER", "SYSTEM"
+  targetId   Int?     // ID of affected resource
+  metadata   Json?    // Additional context (old value, new value, etc.)
+  ipAddress  String?  // IP address of the admin
+  createdAt  DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([actorId, createdAt])
+  @@index([action])
+  @@index([createdAt])
 }

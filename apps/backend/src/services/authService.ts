@@ -28,22 +28,43 @@ export const loginUser = async (email: string, password: string) => {
     throw new Error('Invalid email or password');
   }
 
+  // Check if account is suspended
+  if (!user.isActive) {
+    throw new Error('Account is suspended. Please contact support.');
+  }
+
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) {
     throw new Error('Invalid email or password');
   }
 
-  // const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET || 'your_jwt_secret', {
-  //   expiresIn: '24h',
-  // });
+  // Update last login timestamp
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() },
+  });
 
-  const tokenPayload = { userId: user.id };
+  // Include role in JWT payload for role-based access control
+  const tokenPayload = {
+    userId: user.id,
+    role: user.role,
+  };
 
   const token = jwt.sign(tokenPayload, process.env.JWT_SECRET!, {
     expiresIn: '30d',
   });
 
-  return { user, token };
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      isActive: user.isActive,
+    },
+    token
+  };
 };
 
 
