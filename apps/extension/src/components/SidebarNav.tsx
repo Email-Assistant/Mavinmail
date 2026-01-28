@@ -1,5 +1,5 @@
 import { Screen } from '../App';
-import { Home, MessageSquare, Clock, Settings, User } from 'lucide-react';
+import { Home, MessageSquare, Clock, Settings, User, HelpCircle } from 'lucide-react';
 
 interface SidebarNavProps {
   currentScreen: Screen;
@@ -46,8 +46,20 @@ function SidebarNav({ currentScreen, onScreenChange }: SidebarNavProps) {
             ? 'bg-[#22d3ee] text-[#171717] shadow-[0_0_10px_rgba(34,211,238,0.3)]'
             : 'text-gray-500 hover:text-gray-300'
             }`}
+          title="Settings"
         >
           <Settings size={18} strokeWidth={currentScreen === 'Settings' ? 2.5 : 2} />
+        </button>
+
+        <button
+          onClick={() => onScreenChange('Support')}
+          className={`flex items-center justify-center w-10 h-10 rounded-full transition-all ${currentScreen === 'Support'
+            ? 'bg-[#22d3ee] text-[#171717] shadow-[0_0_10px_rgba(34,211,238,0.3)]'
+            : 'text-gray-500 hover:text-gray-300'
+            }`}
+          title="Support"
+        >
+          <HelpCircle size={18} strokeWidth={currentScreen === 'Support' ? 2.5 : 2} />
         </button>
 
         <button
@@ -56,6 +68,7 @@ function SidebarNav({ currentScreen, onScreenChange }: SidebarNavProps) {
             ? 'bg-[#22d3ee] text-[#171717] shadow-[0_0_10px_rgba(34,211,238,0.3)]'
             : 'text-gray-500 hover:text-gray-300'
             }`}
+          title="Profile"
         >
           <User size={18} strokeWidth={currentScreen === 'Profile' ? 2.5 : 2} />
         </button>

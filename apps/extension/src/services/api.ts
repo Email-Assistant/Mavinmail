@@ -164,3 +164,41 @@ export const updateUserProfile = async (profile: { firstName: string; lastName: 
     throw new Error(error.response?.data?.error || 'Failed to update profile.');
   }
 };
+
+// ====================================================================
+// Support Tickets
+// ====================================================================
+
+export interface SupportTicket {
+  id: number;
+  title: string;
+  description: string;
+  source: string;
+  status: string;
+  priority: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
+}
+
+export const createSupportTicket = async (data: { title: string; description: string; priority?: string }) => {
+  try {
+    const response = await api.post('/support/tickets', {
+      ...data,
+      source: 'extension',
+    });
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.error || 'Failed to create support ticket.');
+  }
+};
+
+export const getUserSupportTickets = async (): Promise<{ tickets: SupportTicket[]; pagination: any }> => {
+  try {
+    const response = await api.get('/support/tickets');
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.error || 'Failed to get support tickets.');
+  }
+};
+
