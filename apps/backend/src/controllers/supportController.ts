@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../middleware/authMiddleware.js';
 import * as supportService from '../services/supportService.js';
 
@@ -10,9 +10,10 @@ import * as supportService from '../services/supportService.js';
  * POST /api/support/tickets
  * Create a new support ticket
  */
-export const createTicket = async (req: AuthenticatedRequest, res: Response) => {
+export const createTicket = async (req: Request, res: Response) => {
+    const authenticatedReq = req as AuthenticatedRequest;
     try {
-        const userId = req.user!.userId;
+        const userId = authenticatedReq.user!.userId;
         const { title, description, source, priority } = req.body;
 
         if (!title || !description) {
@@ -61,9 +62,10 @@ export const createTicket = async (req: AuthenticatedRequest, res: Response) => 
  * GET /api/support/tickets
  * Get user's own tickets
  */
-export const getUserTickets = async (req: AuthenticatedRequest, res: Response) => {
+export const getUserTickets = async (req: Request, res: Response) => {
+    const authenticatedReq = req as AuthenticatedRequest;
     try {
-        const userId = req.user!.userId;
+        const userId = authenticatedReq.user!.userId;
         const { page, limit, status } = req.query;
 
         const result = await supportService.getUserTickets(userId, {
@@ -83,9 +85,10 @@ export const getUserTickets = async (req: AuthenticatedRequest, res: Response) =
  * GET /api/support/tickets/:id
  * Get a specific ticket (user can only see their own)
  */
-export const getTicketById = async (req: AuthenticatedRequest, res: Response) => {
+export const getTicketById = async (req: Request, res: Response) => {
+    const authenticatedReq = req as AuthenticatedRequest;
     try {
-        const userId = req.user!.userId;
+        const userId = authenticatedReq.user!.userId;
         const ticketId = parseInt(req.params.id);
 
         if (isNaN(ticketId)) {
@@ -117,7 +120,7 @@ export const getTicketById = async (req: AuthenticatedRequest, res: Response) =>
  * GET /api/admin/support-tickets
  * Get all support tickets (admin only)
  */
-export const getAllTickets = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllTickets = async (req: Request, res: Response) => {
     try {
         const { page, limit, status, priority, source, search } = req.query;
 
@@ -141,7 +144,7 @@ export const getAllTickets = async (req: AuthenticatedRequest, res: Response) =>
  * GET /api/admin/support-tickets/:id
  * Get a specific ticket (admin only)
  */
-export const getAdminTicketById = async (req: AuthenticatedRequest, res: Response) => {
+export const getAdminTicketById = async (req: Request, res: Response) => {
     try {
         const ticketId = parseInt(req.params.id);
 
@@ -164,9 +167,10 @@ export const getAdminTicketById = async (req: AuthenticatedRequest, res: Respons
  * PUT /api/admin/support-tickets/:id
  * Update a support ticket (admin only)
  */
-export const updateTicket = async (req: AuthenticatedRequest, res: Response) => {
+export const updateTicket = async (req: Request, res: Response) => {
+    const authenticatedReq = req as AuthenticatedRequest;
     try {
-        const adminId = req.user!.userId;
+        const adminId = authenticatedReq.user!.userId;
         const ticketId = parseInt(req.params.id);
         const { status, priority, adminNotes } = req.body;
 
@@ -215,7 +219,7 @@ export const updateTicket = async (req: AuthenticatedRequest, res: Response) => 
  * GET /api/admin/support-tickets/stats
  * Get support ticket statistics (admin only)
  */
-export const getTicketStats = async (req: AuthenticatedRequest, res: Response) => {
+export const getTicketStats = async (req: Request, res: Response) => {
     try {
         const stats = await supportService.getTicketStats();
         res.json(stats);

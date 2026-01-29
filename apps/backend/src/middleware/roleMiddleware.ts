@@ -1,4 +1,4 @@
-import { Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from './authMiddleware.js';
 import { PrismaClient } from '@prisma/client';
 
@@ -19,9 +19,10 @@ const ROLE_HIERARCHY: Record<UserRole, number> = {
  * Usage: router.use(requireRole('ADMIN', 'SUPER_ADMIN'))
  */
 export const requireRole = (...allowedRoles: UserRole[]) => {
-    return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    return async (req: Request, res: Response, next: NextFunction) => {
+        const authenticatedReq = req as AuthenticatedRequest;
         try {
-            const userId = req.user?.userId;
+            const userId = authenticatedReq.user?.userId;
 
             if (!userId) {
                 return res.status(401).json({ error: 'Authentication required' });
@@ -78,12 +79,13 @@ export const requireSuperAdmin = requireRole('SUPER_ADMIN');
  * Use this on routes where even regular users need active status check
  */
 export const requireActive = async (
-    req: AuthenticatedRequest,
+    req: Request,
     res: Response,
     next: NextFunction
 ) => {
+    const authenticatedReq = req as AuthenticatedRequest;
     try {
-        const userId = req.user?.userId;
+        const userId = authenticatedReq.user?.userId;
 
         if (!userId) {
             return res.status(401).json({ error: 'Authentication required' });

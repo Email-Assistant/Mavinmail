@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../middleware/authMiddleware.js';
 import * as adminService from '../services/adminService.js';
 import { canModifyRole, canAssignRole, UserRole } from '../middleware/roleMiddleware.js';
@@ -11,7 +11,7 @@ import { canModifyRole, canAssignRole, UserRole } from '../middleware/roleMiddle
  * GET /api/admin/users
  * List all users with pagination and search
  */
-export const listUsers = async (req: AuthenticatedRequest, res: Response) => {
+export const listUsers = async (req: Request, res: Response) => {
     try {
         const { page, limit, search, role, isActive } = req.query;
 
@@ -34,7 +34,7 @@ export const listUsers = async (req: AuthenticatedRequest, res: Response) => {
  * GET /api/admin/users/:id
  * Get detailed user information
  */
-export const getUserById = async (req: AuthenticatedRequest, res: Response) => {
+export const getUserById = async (req: Request, res: Response) => {
     try {
         const userId = parseInt(req.params.id);
 
@@ -57,12 +57,13 @@ export const getUserById = async (req: AuthenticatedRequest, res: Response) => {
  * PUT /api/admin/users/:id
  * Update user role
  */
-export const updateUserRole = async (req: AuthenticatedRequest, res: Response) => {
+export const updateUserRole = async (req: Request, res: Response) => {
+    const authenticatedReq = req as AuthenticatedRequest;
     try {
         const userId = parseInt(req.params.id);
         const { role: newRole } = req.body;
-        const actorId = req.user!.userId;
-        const actorRole = req.user!.role;
+        const actorId = authenticatedReq.user!.userId;
+        const actorRole = authenticatedReq.user!.role;
 
         if (isNaN(userId)) {
             return res.status(400).json({ error: 'Invalid user ID' });
@@ -119,12 +120,13 @@ export const updateUserRole = async (req: AuthenticatedRequest, res: Response) =
  * POST /api/admin/users/:id/suspend
  * Suspend a user account
  */
-export const suspendUser = async (req: AuthenticatedRequest, res: Response) => {
+export const suspendUser = async (req: Request, res: Response) => {
+    const authenticatedReq = req as AuthenticatedRequest;
     try {
         const userId = parseInt(req.params.id);
         const { reason } = req.body;
-        const actorId = req.user!.userId;
-        const actorRole = req.user!.role;
+        const actorId = authenticatedReq.user!.userId;
+        const actorRole = authenticatedReq.user!.role;
 
         if (isNaN(userId)) {
             return res.status(400).json({ error: 'Invalid user ID' });
@@ -165,11 +167,12 @@ export const suspendUser = async (req: AuthenticatedRequest, res: Response) => {
  * POST /api/admin/users/:id/activate
  * Activate a suspended user account
  */
-export const activateUser = async (req: AuthenticatedRequest, res: Response) => {
+export const activateUser = async (req: Request, res: Response) => {
+    const authenticatedReq = req as AuthenticatedRequest;
     try {
         const userId = parseInt(req.params.id);
-        const actorId = req.user!.userId;
-        const actorRole = req.user!.role;
+        const actorId = authenticatedReq.user!.userId;
+        const actorRole = authenticatedReq.user!.role;
 
         if (isNaN(userId)) {
             return res.status(400).json({ error: 'Invalid user ID' });
@@ -209,7 +212,7 @@ export const activateUser = async (req: AuthenticatedRequest, res: Response) => 
  * GET /api/admin/stats
  * Get platform-wide statistics
  */
-export const getPlatformStats = async (req: AuthenticatedRequest, res: Response) => {
+export const getPlatformStats = async (req: Request, res: Response) => {
     try {
         const stats = await adminService.getPlatformStats();
         res.json(stats);
@@ -227,7 +230,7 @@ export const getPlatformStats = async (req: AuthenticatedRequest, res: Response)
  * GET /api/admin/audit-logs
  * Get admin audit logs (SUPER_ADMIN only)
  */
-export const getAuditLogs = async (req: AuthenticatedRequest, res: Response) => {
+export const getAuditLogs = async (req: Request, res: Response) => {
     try {
         const { page, limit, actorId, action } = req.query;
 

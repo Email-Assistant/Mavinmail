@@ -204,20 +204,25 @@ export async function getDashboardStats(userId: number): Promise<DashboardStats>
             const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
             // Parallel fetch for speed
-            const [profileRes, listRes] = await Promise.all([
-                gmail.users.getProfile({ userId: 'me' }).catch(() => null),
-                // Get estimate for emails received today (INBOX only)
+            const [profileRes, todayRes] = await Promise.all([
+                // Get user profile which contains messagesTotal (All Mail count)
+                gmail.users.getProfile({
+                    userId: 'me'
+                }).catch(() => null),
+                // Get emails received today - using after: timestamp for accurate count
+                // The timestamp is in seconds since epoch for the start of today
                 gmail.users.messages.list({
                     userId: 'me',
-                    q: `after:${Math.floor(new Date().setHours(0, 0, 0, 0) / 1000)} label:INBOX`,
-                    maxResults: 1,
-                    includeSpamTrash: false
+                    q: `after:${Math.floor(todayStart.getTime() / 1000)}`,
+                    maxResults: 500  // Get actual list to count accurately
                 }).catch(() => null)
             ]);
 
-            if (profileRes && listRes) {
+            if (profileRes && todayRes) {
                 liveStats = {
-                    today: listRes.data.resultSizeEstimate || 0,
+                    // Count actual messages returned for today
+                    today: todayRes.data.messages?.length || 0,
+                    // messagesTotal from profile is the exact count of all emails (All Mail)
                     total: profileRes.data.messagesTotal || 0,
                     usingLive: true
                 };
