@@ -31,12 +31,13 @@ interface DigestData {
 interface DailyDigestViewProps {
   onClose: () => void;
   selectedDate?: string; // Optional date in YYYY-MM-DD format
+  onDigestComplete?: (digestData: DigestData) => void; // Callback when digest is loaded
 }
 
 // -----------------------------
 // Component
 // -----------------------------
-export default function DailyDigestView({ onClose, selectedDate }: DailyDigestViewProps) {
+export default function DailyDigestView({ onClose, selectedDate, onDigestComplete }: DailyDigestViewProps) {
   const [digest, setDigest] = useState<DigestData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -93,13 +94,18 @@ export default function DailyDigestView({ onClose, selectedDate }: DailyDigestVi
         }
 
         setDigest(parsed);
+
+        // Call completion callback to save to history
+        if (onDigestComplete) {
+          onDigestComplete(parsed);
+        }
       } catch (error: any) {
         console.error('Error parsing digest:', error);
         setError("Invalid digest format received.");
         setDigest(null);
       }
     });
-  }, [selectedDate]);
+  }, [selectedDate, onDigestComplete]);
 
   return (
     <div className="relative p-3 bg-[#171717] border border-[#262626] rounded-xl text-white mb-3 shadow-lg max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
@@ -153,9 +159,9 @@ export default function DailyDigestView({ onClose, selectedDate }: DailyDigestVi
                           <div className="flex items-center gap-2 mb-1">
                             {item.category && (
                               <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase border ${item.category.toLowerCase() === 'primary' ? 'text-cyan-400 border-cyan-400/30 bg-cyan-400/10' :
-                                  item.category.toLowerCase() === 'social' ? 'text-pink-400 border-pink-400/30 bg-pink-400/10' :
-                                    item.category.toLowerCase() === 'promotions' ? 'text-green-400 border-green-400/30 bg-green-400/10' :
-                                      'text-gray-400 border-gray-600'
+                                item.category.toLowerCase() === 'social' ? 'text-pink-400 border-pink-400/30 bg-pink-400/10' :
+                                  item.category.toLowerCase() === 'promotions' ? 'text-green-400 border-green-400/30 bg-green-400/10' :
+                                    'text-gray-400 border-gray-600'
                                 }`}>
                                 {item.category}
                               </span>

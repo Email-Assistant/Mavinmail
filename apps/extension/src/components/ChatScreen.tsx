@@ -72,6 +72,24 @@ function ChatScreen({ isLoggedIn, onLoginClick, activeConversationId, onConversa
       setMessages([]); // New chat
     }
   }, [activeConversationId, getConversation]);
+
+  // Refs to access current state in message listener
+  const conversationIdRef = useRef<string | null>(activeConversationId);
+  const onAddMessageRef = useRef(onAddMessage);
+  const onCreateConversationRef = useRef(onCreateConversation);
+  const onConversationChangeRef = useRef(onConversationChange);
+
+  // Keep refs in sync with props/state
+  useEffect(() => {
+    conversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    onAddMessageRef.current = onAddMessage;
+    onCreateConversationRef.current = onCreateConversation;
+    onConversationChangeRef.current = onConversationChange;
+  }, [onAddMessage, onCreateConversation, onConversationChange]);
+
   const [isRagLoading, setIsRagLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -158,56 +176,75 @@ function ChatScreen({ isLoggedIn, onLoginClick, activeConversationId, onConversa
 
   //-------------------------------------------------------------------------
 
-  // --- NEW EFFECT TO LISTEN FOR MESSAGES ---
+  // --- Helper to save message to history using refs ---
+  const saveMessageToHistory = (msg: Message) => {
+    let convId = conversationIdRef.current;
+    if (!convId) {
+      // Create new conversation with this message
+      convId = onCreateConversationRef.current(msg);
+      onConversationChangeRef.current(convId);
+      conversationIdRef.current = convId;
+    } else {
+      onAddMessageRef.current(convId, msg);
+    }
+  };
+
+  // --- EFFECT TO LISTEN FOR CHROME MESSAGES ---
   useEffect(() => {
     const messageListener = (message: any) => {
       if (message.type === "SUMMARY_LOADING") {
-        // Optionally handled locally by handleSummarizeClick, but if triggered from sidepanel elsewhere:
-        // setSummaryState({ isLoading: true, summary: "", error: "" });
+        // Handled locally by handleSummarizeClick
       } else if (message.type === "SUMMARY_RESULT") {
-        // Find the last loading summary message and update it, or append new one
+        const summaryMsg: Message = {
+          id: Date.now(),
+          sender: 'ai',
+          text: "Summary Generated",
+          type: 'summary',
+          data: message.payload,
+          isLoading: false
+        };
+
         setMessages((prev) => {
           const lastMsg = prev[prev.length - 1];
           if (lastMsg && lastMsg.type === 'summary' && lastMsg.isLoading) {
-            return prev.map(msg => msg.id === lastMsg.id ? { ...msg, isLoading: false, data: message.payload, text: "Summary Generated" } : msg);
+            return prev.map(msg => msg.id === lastMsg.id ? summaryMsg : msg);
           }
-          return [...prev, {
-            id: Date.now(),
-            sender: 'ai',
-            text: "Summary Generated",
-            type: 'summary',
-            data: message.payload,
-            isLoading: false
-          }];
+          return [...prev, summaryMsg];
         });
+
+        // Save to history
+        saveMessageToHistory(summaryMsg);
+
       } else if (message.type === "SUMMARY_ERROR") {
+        const errorMsg: Message = {
+          id: Date.now(),
+          sender: 'ai',
+          text: `Summary Failed: ${message.payload}`,
+          type: 'summary',
+          error: message.payload,
+          isLoading: false
+        };
+
         setMessages((prev) => {
           const lastMsg = prev[prev.length - 1];
           if (lastMsg && lastMsg.type === 'summary' && lastMsg.isLoading) {
-            return prev.map(msg => msg.id === lastMsg.id ? { ...msg, isLoading: false, error: message.payload, text: "Summary Failed" } : msg);
+            return prev.map(msg => msg.id === lastMsg.id ? errorMsg : msg);
           }
-          return [...prev, {
-            id: Date.now(),
-            sender: 'ai',
-            text: "Summary Failed",
-            type: 'summary',
-            error: message.payload,
-            isLoading: false
-          }];
+          return [...prev, errorMsg];
         });
+
       } else if (message.type === "DRAFT_RESULT") {
         setIsRagLoading(false);
         const aiMessage: Message = {
           id: Date.now(),
           sender: "ai",
-          text: message.payload, // The draft reply
+          text: message.payload,
         };
         setMessages((prev) => [...prev, aiMessage]);
 
-        // Should we save to conversation history? Yes.
-        // But we need the ID. It's tricky inside the listener closure if activeConversationId changes.
-        // However, usually it won't change mid-request. 
-        // For now, let's just update UI state. History persistence might need a ref or context.
+        // Save to history
+        saveMessageToHistory(aiMessage);
+
       } else if (message.type === "DRAFT_ERROR") {
         setIsRagLoading(false);
         const errorMessage: Message = {
@@ -257,10 +294,25 @@ function ChatScreen({ isLoggedIn, onLoginClick, activeConversationId, onConversa
   const renderActiveView = () => {
     switch (activeView) {
       case "digest":
-        return <DailyDigestView onClose={() => {
-          setActiveView("none");
-          setSelectedDate("");
-        }} selectedDate={selectedDate} />;
+        return <DailyDigestView
+          onClose={() => {
+            setActiveView("none");
+            setSelectedDate("");
+          }}
+          selectedDate={selectedDate}
+          onDigestComplete={(digestData: any) => {
+            // Add digest as a message in conversation
+            const digestMsg: Message = {
+              id: Date.now(),
+              sender: 'ai',
+              text: `Daily Digest${selectedDate ? ` for ${selectedDate}` : ''} generated`,
+              type: 'digest',
+              data: digestData
+            };
+            setMessages(prev => [...prev, digestMsg]);
+            saveMessageToHistory(digestMsg);
+          }}
+        />;
       case "summarize":
         // Fallback if needed, but we are using inline messages now
         return <SummaryResultView onClose={() => setActiveView("none")} />;
@@ -495,11 +547,12 @@ function ChatScreen({ isLoggedIn, onLoginClick, activeConversationId, onConversa
           )}
         </div>
 
-        {renderActiveView()}
-
         {messages.map((msg) => (
           <ChatMessage key={msg.id} message={msg} />
         ))}
+
+        {/* Active view (digest, summary) rendered AFTER messages for proper order */}
+        {renderActiveView()}
 
 
 

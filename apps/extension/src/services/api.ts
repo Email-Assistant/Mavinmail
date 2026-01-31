@@ -214,3 +214,26 @@ export const deleteSupportTicket = async (id: number): Promise<{ success: boolea
   }
 };
 
+// ====================================================================
+// AI Model API Functions
+// ====================================================================
+
+export interface AIModel {
+  id: number;
+  modelId: string;
+  displayName: string;
+  description?: string;
+  isActive: boolean;
+  isDefault: boolean;
+}
+
+// Get active models for selection dropdown
+export const getAvailableModels = async (): Promise<AIModel[]> => {
+  try {
+    const response = await api.get('/models');
+    return response.data.models || [];
+  } catch (error: any) {
+    console.error('Failed to fetch available models:', error);
+    return [];
+  }
+};

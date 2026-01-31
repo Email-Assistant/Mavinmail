@@ -1,31 +1,48 @@
 
 import { useState, useEffect } from 'react';
-import { syncEmails, updateModelPreference, syncModelPreference } from '../services/api.js';
-import { Settings, Brain, RefreshCw, ChevronDown, CheckCircle2, AlertCircle } from 'lucide-react';
+import { syncEmails, updateModelPreference, syncModelPreference, getAvailableModels, type AIModel } from '../services/api.js';
+import { RefreshCw, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 
 function SettingScreen() {
-
   const [syncStatus, setSyncStatus] = useState<{ message: string; type: 'success' | 'error' | 'loading' } | null>(null);
-  const [selectedModel, setSelectedModel] = useState(import.meta.env.VITE_DEFAULT_AI_MODEL || 'google/gemini-2.0-flash-exp:free');
+  const [models, setModels] = useState<AIModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [loadingModels, setLoadingModels] = useState(true);
 
-  // Load saved model on mount
+  // Load available models and user preference on mount
   useEffect(() => {
-    // 1. First load from local storage for instant UI
-    chrome.storage.local.get(['selectedModel'], (result) => {
-      if (result.selectedModel) {
-        setSelectedModel(result.selectedModel);
-      }
-    });
+    const loadModels = async () => {
+      try {
+        // 1. Fetch available models from backend
+        const availableModels = await getAvailableModels();
+        setModels(availableModels);
 
-    // 2. Then sync from backend to ensure latest cross-device setting
-    syncModelPreference().then(() => {
-      chrome.storage.local.get(['selectedModel'], (result) => {
+        // 2. Check local storage for user's selection
+        const result = await chrome.storage.local.get(['selectedModel']);
         if (result.selectedModel) {
           setSelectedModel(result.selectedModel);
+        } else {
+          // 3. Use default model from the list or first available
+          const defaultModel = availableModels.find(m => m.isDefault);
+          const fallbackModel = defaultModel?.modelId || availableModels[0]?.modelId || '';
+          setSelectedModel(fallbackModel);
         }
-      });
-    });
+
+        // 4. Sync from backend to ensure latest cross-device setting
+        await syncModelPreference();
+        const updated = await chrome.storage.local.get(['selectedModel']);
+        if (updated.selectedModel) {
+          setSelectedModel(updated.selectedModel);
+        }
+      } catch (error) {
+        console.error('Failed to load models:', error);
+      } finally {
+        setLoadingModels(false);
+      }
+    };
+
+    loadModels();
   }, []);
 
   const handleModelChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -43,7 +60,6 @@ function SettingScreen() {
       console.log('Model synced to backend:', newModel);
     } catch (error) {
       console.error('Failed to sync model to backend:', error);
-      // setSyncStatus('Failed to sync model preference.'); // Optional: show error toast
     }
   };
 
@@ -74,16 +90,29 @@ function SettingScreen() {
           <label className="block text-sm font-medium text-gray-400 mb-2">
             AI Model
           </label>
-          <select
-            value={selectedModel}
-            onChange={handleModelChange}
-            className="w-full bg-[#2C2C2C] text-white border border-gray-700 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#31B8C6]"
-          >
-            <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash (Free)</option>
-            <option value="google/gemini-2.0-flash-thinking-exp:free">Gemini 2.0 Flash Thinking (Free)</option>
-            <option value="meta-llama/llama-3.2-3b-instruct:free">Llama 3.2 3B (Free)</option>
-            <option value="microsoft/phi-3-mini-128k-instruct:free">Phi-3 Mini (Free)</option>
-          </select>
+          {loadingModels ? (
+            <div className="flex items-center gap-2 text-gray-400 text-sm py-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading models...
+            </div>
+          ) : models.length === 0 ? (
+            <div className="text-sm text-gray-500 py-2">
+              No models available. Please contact support.
+            </div>
+          ) : (
+            <select
+              value={selectedModel}
+              onChange={handleModelChange}
+              className="w-full bg-[#2C2C2C] text-white border border-gray-700 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#31B8C6]"
+            >
+              {models.map((model) => (
+                <option key={model.modelId} value={model.modelId}>
+                  {model.displayName}
+                  {model.isDefault ? ' (Default)' : ''}
+                </option>
+              ))}
+            </select>
+          )}
           <p className="text-xs text-gray-500 mt-2">
             Select the AI model used for summaries and chat.
           </p>
@@ -104,7 +133,7 @@ function SettingScreen() {
           {/* Status Indicator */}
           {syncStatus && (
             <div className={`mt-3 flex items-center justify-center gap-1.5 text-xs font-medium animate-in fade-in slide-in-from-top-1 ${syncStatus.type === 'success' ? 'text-emerald-500' :
-                syncStatus.type === 'error' ? 'text-red-400' : 'text-[#22d3ee]'
+              syncStatus.type === 'error' ? 'text-red-400' : 'text-[#22d3ee]'
               }`}>
               {syncStatus.type === 'success' ? <CheckCircle2 className="w-3.5 h-3.5" /> :
                 syncStatus.type === 'error' ? <AlertCircle className="w-3.5 h-3.5" /> : null}

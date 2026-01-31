@@ -5,7 +5,7 @@ export interface Message {
   id: number;
   sender: 'user' | 'ai';
   text: string;
-  type?: 'text' | 'summary';
+  type?: 'text' | 'summary' | 'digest';
   data?: any; // For summary object
   error?: string;
   isLoading?: boolean;
