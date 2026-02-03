@@ -4,7 +4,9 @@ import { Request, Response } from 'express';
 import { OpenRouterService } from '../services/openrouterService.js';
 import { queryRelevantEmailChunks } from '../services/pineconeService.js';
 import { getEmailById, EmailData } from '../services/emailService.js';
-import { generateAnswerFromContext } from '../services/geminiService.js';
+import { generateAnswerFromContext, generateGroundedAnswer } from '../services/geminiService.js';
+import { classifyQuery } from '../services/queryClassifierService.js';
+import { executeRetrieval } from '../services/retrievalService.js';
 import { PrismaClient } from '@prisma/client';
 import { logUsage } from '../services/analyticsService.js';
 import { resolveUserModel, getUserIdFromRequest } from '../utils/modelHelper.js';
@@ -156,41 +158,40 @@ Question: ${question}
     }
 
     // ------------------------------------------------------------------
-    // MODE 2: RAG ENABLED (Search Inbox)
+    // MODE 2: RAG ENABLED (Search Inbox) - ENHANCED PIPELINE
     // ------------------------------------------------------------------
-    console.log('🔍 RAG Enabled. Searching Inbox...');
+    console.log('🔍 RAG Enabled. Processing query with enhanced pipeline...');
 
-    // 1️⃣ Retrieve relevant email IDs from Pinecone (Metadata only)
-    // Note: queryRelevantEmailChunks now returns objects with { emailId, ... } but NO originalText
-    const relevantMatches = await queryRelevantEmailChunks(question, String(userId));
+    // 1️⃣ CLASSIFY QUERY - Determine intent and extract entities
+    const classification = await classifyQuery(question);
+    console.log(`📊 Query Classification: ${classification.intent} (confidence: ${classification.confidence})`);
 
-    // Extract unique Email IDs
-    const uniqueEmailIds = Array.from(new Set(relevantMatches.map(m => m.metadata?.emailId).filter(Boolean))) as string[];
+    // 2️⃣ RETRIEVE - Use appropriate retrieval strategy
+    const retrievalResult = await executeRetrieval(String(userId), question, classification);
 
-    console.log(`🔍 Found ${uniqueEmailIds.length} relevant emails in index.`);
-
-    if (uniqueEmailIds.length === 0) {
+    if (!retrievalResult.success || retrievalResult.emails.length === 0) {
+      console.log('❌ No relevant emails found');
       return res.json({
-        answer: "I couldn't find any relevant emails in your index to answer that question.",
+        answer: "I couldn't find any relevant information in your indexed emails to answer that question. Try syncing more emails or rephrasing your question.",
+        metadata: {
+          intent: classification.intent,
+          confidence: classification.confidence,
+          emailsRetrieved: 0,
+        }
       });
     }
 
-    // 2️⃣ Fetch FULL content from Gmail (Privacy-First: Content is retrieved on-demand)
-    // Limit to top 5 to avoid slow fetch/context overflow
-    const topEmailIds = uniqueEmailIds.slice(0, 5);
-    const emailPromises = topEmailIds.map(id => getEmailById(Number(userId), id));
+    console.log(`✅ Retrieved ${retrievalResult.emails.length} relevant emails`);
 
-    // Explicitly type the filter
-    const emails = (await Promise.all(emailPromises)).filter((e): e is NonNullable<typeof e> => e !== null);
-
-    // 3️⃣ Build Context
-    const context = emails
-      .map((e: EmailData) => `
-From: ${e.from}
-Subject: ${e.subject}
-Date: ${e.timestamp}
+    // 3️⃣ BUILD CONTEXT - Format emails for answer generation
+    const context = retrievalResult.emails
+      .map((email, idx) => `
+[Email ${idx + 1}]
+From: ${email.from}
+Subject: ${email.subject}
+Date: ${email.timestamp}
 Content:
-${e.content}
+${email.content}
 --------------------------------------------------
 `)
       .join('\n');
@@ -198,15 +199,41 @@ ${e.content}
     // Safety truncate
     const truncatedContext = context.slice(0, 15000);
 
-    // 4️⃣ Generate grounded answer
-    const answer = await generateAnswerFromContext(question, truncatedContext, model);
+    // 4️⃣ GENERATE GROUNDED ANSWER - With strict grounding
+    const answer = await generateGroundedAnswer({
+      question,
+      context: truncatedContext,
+      intent: classification.intent,
+      aggregation: retrievalResult.aggregation,
+      model,
+    });
 
     // Log usage for analytics
     if (userId) {
-      logUsage({ userId: Number(userId), action: 'rag_query', metadata: { query: question, model, useRag: true } });
+      logUsage({
+        userId: Number(userId),
+        action: 'rag_query',
+        metadata: {
+          query: question,
+          model,
+          useRag: true,
+          intent: classification.intent,
+          confidence: classification.confidence,
+          emailsRetrieved: retrievalResult.emails.length,
+          latencyMs: retrievalResult.latencyMs,
+        }
+      });
     }
 
-    res.json({ answer });
+    res.json({
+      answer,
+      metadata: {
+        intent: classification.intent,
+        confidence: classification.confidence,
+        emailsRetrieved: retrievalResult.emails.length,
+        aggregation: retrievalResult.aggregation,
+      }
+    });
 
   } catch (error) {
     console.error('Ask question error:', error);
@@ -291,5 +318,93 @@ Draft a professional and polite reply to the above email.
   } catch (error) {
     console.error('Error in draftReply:', error);
     res.status(500).json({ error: 'Failed to generate draft reply.' });
+  }
+};
+
+/**
+ * 🚀 STREAMING: Ask a question with real-time streaming response
+ * Uses Server-Sent Events (SSE) to stream the answer as it's generated
+ */
+export const askQuestionStream = async (req: Request, res: Response) => {
+  const { question, useRag = true } = req.body;
+  // @ts-ignore
+  const userId = getUserIdFromRequest(req);
+
+  // Resolve model
+  const headerOverride = req.headers['x-model-id'] as string | undefined;
+  const model = await resolveUserModel(userId, headerOverride);
+
+  console.log('🌊 [STREAMING] askQuestionStream Request:', { question, useRag, model });
+
+  if (!question) {
+    return res.status(400).json({ message: 'Question is required.' });
+  }
+
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  try {
+    let context = '';
+    let classification = null;
+
+    if (useRag) {
+      // Classify and retrieve
+      classification = await classifyQuery(question);
+      res.write(`data: ${JSON.stringify({ type: 'status', message: `Searching emails (${classification.intent})...` })}\n\n`);
+
+      const retrievalResult = await executeRetrieval(String(userId), question, classification);
+
+      if (!retrievalResult.success || retrievalResult.emails.length === 0) {
+        res.write(`data: ${JSON.stringify({ type: 'answer', content: "I couldn't find relevant emails. Try syncing more emails." })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
+
+      res.write(`data: ${JSON.stringify({ type: 'status', message: `Found ${retrievalResult.emails.length} emails, generating answer...` })}\n\n`);
+
+      // Build context
+      context = retrievalResult.emails
+        .map((email, idx) => `[Email ${idx + 1}]\nFrom: ${email.from}\nSubject: ${email.subject}\nDate: ${email.timestamp}\nContent:\n${email.content}\n--------------------------------------------------`)
+        .join('\n');
+      context = context.slice(0, 15000);
+    }
+
+    // Build prompt
+    const prompt = useRag
+      ? `You are an intelligent email assistant. Use ONLY the information in the context below.
+If you cannot find an answer, say "I couldn't find that information."
+
+Context:
+${context}
+
+Question: ${question}
+
+Answer:`
+      : `You are a helpful AI assistant. Answer the following question: ${question}`;
+
+    // Stream the response
+    await OpenRouterService.generateContentStream(
+      prompt,
+      (chunk) => {
+        res.write(`data: ${JSON.stringify({ type: 'answer', content: chunk })}\n\n`);
+      },
+      model
+    );
+
+    res.write('data: [DONE]\n\n');
+    res.end();
+
+    // Log usage
+    if (userId) {
+      logUsage({ userId: Number(userId), action: 'rag_query', metadata: { query: question, model, useRag, streaming: true } });
+    }
+
+  } catch (error) {
+    console.error('Streaming error:', error);
+    res.write(`data: ${JSON.stringify({ type: 'error', message: 'Failed to generate answer' })}\n\n`);
+    res.end();
   }
 };
