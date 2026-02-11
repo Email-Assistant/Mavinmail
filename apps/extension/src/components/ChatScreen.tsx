@@ -6,7 +6,7 @@ import EnhancementMenu from "./EnhancementMenu.js"; // <-- Import our new compon
 import Tooltip from "./Tooltip";
 
 //rag
-import { askQuestion, syncModelPreference, enhanceText } from "../services/api.js";
+import { askQuestion, askQuestionStream, syncModelPreference, enhanceText } from "../services/api.js";
 import { ChatMessage, Message } from "./ChatMessage.js";
 
 interface ChatScreenProps {
@@ -147,21 +147,54 @@ function ChatScreen({ isLoggedIn, onLoginClick, activeConversationId, onConversa
     }
 
     try {
-      // Pass isRagEnabled state
-      const { answer } = await askQuestion(prompt, isRagEnabled);
-      const aiMessage: Message = {
-        id: Date.now() + 1,
+      // 🚀 STREAMING: Use SSE for real-time response
+      // Create a placeholder AI message that will be updated
+      const aiMessageId = Date.now() + 1;
+      let accumulatedText = '';
+
+      // Add placeholder message
+      const placeholderMessage: Message = {
+        id: aiMessageId,
         sender: "ai",
-        text: answer,
+        text: "",  // Will be updated in real-time
       };
+      setMessages((prev) => [...prev, placeholderMessage]);
 
-      setMessages((prev) => [...prev, aiMessage]);
-
-      // Save AI message to history
-      if (currentConversationId) {
-        onAddMessage(currentConversationId, aiMessage);
-      }
-
+      await askQuestionStream(
+        prompt,
+        isRagEnabled,
+        // onStatus callback
+        (status) => {
+          setMessages((prev) => prev.map((msg) =>
+            msg.id === aiMessageId ? { ...msg, text: `⏳ ${status}` } : msg
+          ));
+        },
+        // onChunk callback - Update message with accumulated text
+        (chunk) => {
+          accumulatedText += chunk;
+          setMessages((prev) => prev.map((msg) =>
+            msg.id === aiMessageId ? { ...msg, text: accumulatedText } : msg
+          ));
+        },
+        // onDone callback
+        () => {
+          // Final update and save to history
+          const finalMessage: Message = {
+            id: aiMessageId,
+            sender: "ai",
+            text: accumulatedText,
+          };
+          if (currentConversationId) {
+            onAddMessage(currentConversationId, finalMessage);
+          }
+        },
+        // onError callback
+        (error) => {
+          setMessages((prev) => prev.map((msg) =>
+            msg.id === aiMessageId ? { ...msg, text: `Sorry, an error occurred: ${error}` } : msg
+          ));
+        }
+      );
     } catch (err: any) {
       const errorMessage: Message = {
         id: Date.now() + 1,

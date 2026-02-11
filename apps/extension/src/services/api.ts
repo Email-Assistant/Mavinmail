@@ -92,6 +92,86 @@ export const askQuestion = async (question: string, useRag: boolean = true): Pro
   return response.data;
 };
 
+/**
+ * 🚀 STREAMING: Ask a question with real-time streaming response
+ * Uses EventSource to receive SSE stream and calls callbacks for updates
+ */
+export const askQuestionStream = async (
+  question: string,
+  useRag: boolean,
+  onStatus: (status: string) => void,
+  onChunk: (chunk: string) => void,
+  onDone: () => void,
+  onError: (error: string) => void
+): Promise<void> => {
+  const result = await chrome.storage.local.get(['token', 'selectedModel']);
+  const token = result.token;
+  const selectedModel = result.selectedModel;
+
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': token ? `Bearer ${token}` : '',
+    };
+    if (selectedModel) {
+      headers['x-model-id'] = String(selectedModel);
+    }
+
+    const response = await fetch(`${API_URL}/ai/ask/stream`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ question, useRag }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const text = decoder.decode(value);
+      const lines = text.split('\n');
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          if (data === '[DONE]') {
+            onDone();
+            return;
+          }
+
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'status') {
+              onStatus(parsed.message);
+            } else if (parsed.type === 'answer') {
+              onChunk(parsed.content);
+            } else if (parsed.type === 'error') {
+              onError(parsed.message);
+            }
+          } catch (e) {
+            // Ignore parse errors for individual lines
+          }
+        }
+      }
+    }
+
+    onDone();
+  } catch (error: any) {
+    onError(error.message || 'Streaming failed');
+  }
+};
+
+
 export const getDailyDigest = async (): Promise<{ summary: string }> => {
   const response = await api.get('/gmail/digest'); // Model header added by interceptor
   return response.data;
