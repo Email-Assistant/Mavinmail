@@ -1,135 +1,155 @@
-# Turborepo starter
+# 📧 Mavinmail
 
-This Turborepo starter is maintained by the Turborepo core team.
+Mavinmail is a powerful, AI-driven email assistant built as a modern monorepo. It features a complete ecosystem comprising a powerful Node.js/Express backend, a sleek Next.js dashboard, and a React-based browser extension, all harmonized using Turborepo.
 
-## Using this example
+---
 
-Run the following command:
+## 🏗 Project Architecture
 
-```sh
-npx create-turbo@latest
+```mermaid
+graph TD
+    subgraph "Mavinmail Monorepo (Turborepo + Yarn Workspaces)"
+        direction TB
+
+        subgraph "Apps"
+            A[Dashboard <br/> Next.js 15 + Tailwind v4 + React 19]
+            B[Extension <br/> Vite + React + Tailwind]
+            C[Backend <br/> Express + Node.js]
+        end
+
+        subgraph "Packages"
+            D[UI Components]
+            E[ESLint Config]
+            F[TypeScript Config]
+        end
+
+        A --> D
+        A --> C
+        B --> D
+        B --> C
+
+        C --> DB[(PostgreSQL)]
+        C --> Redis[(Redis / BullMQ)]
+        C --> AI[AI Services <br/> OpenRouter, Cohere, Gemini]
+    end
 ```
 
-## What's inside?
+## 🚀 Tech Stack
 
-This Turborepo includes the following packages/apps:
+### Backend (`apps/backend`)
+- **Runtime & Framework:** Node.js, Express, TypeScript, tsx
+- **Database & ORM:** PostgreSQL, Prisma
+- **Queueing & Caching:** Redis, BullMQ
+- **Authentication:** Passport.js (Google OAuth 2.0), JWT
+- **AI Integration:** Google Generative AI, Cohere, Pinecone, OpenRouter
+- **Documentation:** Swagger/OpenAPI
 
-### Apps and Packages
+### Dashboard (`apps/dashboard`)
+- **Framework:** Next.js 15 (Static export), React 19
+- **Styling:** Tailwind CSS v4, Framer Motion
+- **UI Components:** Radix UI primitives
+- **Forms & Validation:** React Hook Form, Zod, Axios
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+### Extension (`apps/extension`)
+- **Build Tool:** Vite
+- **Framework:** React 19
+- **State Management:** Zustand
+- **Styling:** Tailwind CSS v4, Framer Motion
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+## 🛠 Prerequisites
 
-### Utilities
+Before you start, make sure you have the following installed:
+- **Node.js** (v18 or higher)
+- **Yarn** (v1.22+)
+- **Docker & Docker Compose** (for running the PostgreSQL database)
 
-This Turborepo has some additional tools already setup for you:
+You will also need API keys for:
+- Google OAuth (Client ID and Secret)
+- OpenRouter, Cohere, and Pinecone (if you intend to utilize the AI features)
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
+## ⚙️ Setup & Installation
 
-### Build
-
-To build all apps and packages, run the following command:
-
-```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
-```
-
-You can build a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
-
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build --filter=docs
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
+**1. Clone the repository**
+```bash
+git clone <repository-url>
+cd Mavinmail
 ```
 
-### Develop
-
-To develop all apps and packages, run the following command:
-
-```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
+**2. Install dependencies**
+Install dependencies for all workspaces using Yarn:
+```bash
+yarn install
 ```
 
-You can develop a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
-
+**3. Configure Environment Variables**
+Navigate to `apps/backend` and duplicate the `.env.example` file to create your local `.env` configuration:
+```bash
+cd apps/backend
+cp .env.example .env
 ```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev --filter=web
+Open `apps/backend/.env` and fill in your API keys, OAuth credentials, and database URL.
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
+**4. Start the Database (Docker)**
+Mavinmail requires a PostgreSQL database. You can start one easily using the provided Docker configuration in the backend:
+```bash
+cd apps/backend
+docker-compose up -d
 ```
+*(This starts a Postgres container exposed on port `5432` with the default user/password `mavinmail` matching the `.env.example` DATABASE_URL).*
 
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo login
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
+**5. Database Migrations & Client Generation**
+Once the database is running, apply the Prisma schema:
+```bash
+cd apps/backend
+npx prisma db push
 ```
 
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
+## 🏃‍♂️ How to Run
 
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
+### Run the entire project (Recommended)
+You can run the backend, dashboard, and extension concurrently from the root directory using Turborepo:
 
+```bash
+# from the root of the project
+yarn dev
 ```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo link
+*(This executes `turbo run dev`, starting all development servers simultaneously).*
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo link
-yarn exec turbo link
-pnpm exec turbo link
+### Run individual applications
+If you prefer to run applications individually:
+
+- **Backend**:
+  ```bash
+  cd apps/backend
+  yarn dev
+  ```
+  *(Runs on [http://localhost:5001](http://localhost:5001))*
+
+- **Dashboard**:
+  ```bash
+  cd apps/dashboard
+  yarn dev
+  ```
+  *(Runs on [http://localhost:3000](http://localhost:3000))*
+
+- **Extension**:
+  ```bash
+  cd apps/extension
+  yarn dev
+  ```
+
+## 📂 Project Structure Overview
+
+```text
+Mavinmail/
+├── apps/
+│   ├── backend/        # Express API server, db models, queues, AI logic
+│   ├── dashboard/      # Next.js web application for managing emails/settings
+│   └── extension/      # Browser extension source code
+├── packages/
+│   ├── ui/             # Shared React UI components
+│   ├── eslint-config/  # Shared linting rules
+│   └── typescript-config/# Shared TS compilations settings
+├── turbo.json          # Turborepo task pipeline configuration
+└── package.json        # Root workspace configuration
 ```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.com/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.com/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.com/docs/reference/configuration)
-- [CLI Usage](https://turborepo.com/docs/reference/command-line-reference)
