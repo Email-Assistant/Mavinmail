@@ -1,0 +1,74 @@
+name: Auto Labeler
+
+on:
+  issues:
+    types: [opened, edited]
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install js-yaml
+        run: npm install js-yaml --no-save
+        
+      - name: Label Issue or PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const yaml = require('js-yaml');
+            
+            // Read config
+            const fileContents = fs.readFileSync('.github/labeler.yml', 'utf8');
+            const config = yaml.load(fileContents);
+            
+            // Get issue or PR context
+            const item = context.payload.pull_request || context.payload.issue;
+            if (!item) {
+              console.log('No issue or PR found in context.');
+              return;
+            }
+            
+            const title = (item.title || '').toLowerCase();
+            const body = (item.body || '').toLowerCase();
+            
+            const labelsToAdd = new Set();
+            
+            // Match against config
+            for (const [label, rules] of Object.entries(config)) {
+              if (Array.isArray(rules)) {
+                for (const rule of rules) {
+                  // Check title
+                  if (rule.title && Array.isArray(rule.title)) {
+                    if (rule.title.some(keyword => title.includes(keyword.toLowerCase()))) {
+                      labelsToAdd.add(label);
+                    }
+                  }
+                  // Check body
+                  if (rule.body && Array.isArray(rule.body)) {
+                    if (rule.body.some(keyword => body.includes(keyword.toLowerCase()))) {
+                      labelsToAdd.add(label);
+                    }
+                  }
+                }
+              }
+            }
+            
+            if (labelsToAdd.size > 0) {
+              console.log(`Adding labels: ${Array.from(labelsToAdd).join(', ')}`);
+              await github.rest.issues.addLabels({
+                issue_number: item.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: Array.from(labelsToAdd)
+              });
+            } else {
+              console.log('No matching labels found for this issue/PR.');
+            }
