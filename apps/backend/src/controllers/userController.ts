@@ -1,14 +1,14 @@
-import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { decrypt } from '../services/encryptionService.js';
+import { type Response } from 'express';
+import { type AuthenticatedRequest } from '../middleware/authMiddleware.js';
+import prisma from '../utils/prisma.js';
+import { encrypt, decrypt } from '../services/encryptionService.js';
 import { google } from 'googleapis';
 import bcrypt from 'bcryptjs';
-
-const prisma = new PrismaClient();
+import logger from '../utils/logger.js';
 
 // Controller to get the status of the user's Google connection
-export const getConnectionStatus = async (req: any, res: Response) => {
-  const userId = req.user.userId;
+export const getConnectionStatus = async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
 
   try {
     const googleAccount = await prisma.connectedAccount.findFirst({
@@ -26,8 +26,8 @@ export const getConnectionStatus = async (req: any, res: Response) => {
 };
 
 // Controller to disconnect a Google account
-export const disconnectGoogleAccount = async (req: any, res: Response) => {
-  const userId = req.user.userId;
+export const disconnectGoogleAccount = async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
 
   try {
     const account = await prisma.connectedAccount.findFirst({
@@ -45,9 +45,9 @@ export const disconnectGoogleAccount = async (req: any, res: Response) => {
         // We need to decrypt the token to revoke it.
         const decryptedToken = decrypt(account.refreshToken || account.accessToken);
         await oauth2Client.revokeToken(decryptedToken);
-        console.log(`Successfully revoked token for user ${userId}`);
+        logger.info(`Successfully revoked token for user ${userId}`);
       } catch (revocationError) {
-        console.error('Failed to revoke Google token, but proceeding with DB deletion:', revocationError);
+        logger.error('Failed to revoke Google token, but proceeding with DB deletion:', revocationError);
       }
 
       // Now, delete the record from our database.
@@ -66,8 +66,8 @@ export const disconnectGoogleAccount = async (req: any, res: Response) => {
 // =====> NEW: Handlers for User Preferences <=====
 // ====================================================================
 
-export const getPreferences = async (req: any, res: Response) => {
-  const userId = req.user.userId;
+export const getPreferences = async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
 
   try {
     const user = await prisma.user.findUnique({
@@ -94,13 +94,13 @@ export const getPreferences = async (req: any, res: Response) => {
       preferredModel,
     });
   } catch (error) {
-    console.error('Error fetching preferences:', error);
+    logger.error('Error fetching preferences:', error);
     res.status(500).json({ message: 'Failed to fetch preferences' });
   }
 };
 
-export const updatePreferences = async (req: any, res: Response) => {
-  const userId = req.user.userId;
+export const updatePreferences = async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
   const { preferredModel } = req.body;
 
   if (!preferredModel) {
@@ -113,14 +113,14 @@ export const updatePreferences = async (req: any, res: Response) => {
       data: { preferredModel },
     });
 
-    console.log(`✅ Updated model preference for user ${userId} to: ${preferredModel}`);
+    logger.info(`✅ Updated model preference for user ${userId} to: ${preferredModel}`);
 
     res.status(200).json({
       message: 'Preferences updated successfully',
       preferredModel: user.preferredModel,
     });
   } catch (error) {
-    console.error('Error updating preferences:', error);
+    logger.error('Error updating preferences:', error);
     res.status(500).json({ message: 'Failed to update preferences' });
   }
 };
@@ -133,8 +133,8 @@ export const updatePreferences = async (req: any, res: Response) => {
  * GET /api/user/profile
  * Returns the user's profile information (firstName, lastName, email)
  */
-export const getProfile = async (req: any, res: Response) => {
-  const userId = req.user.userId;
+export const getProfile = async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
 
   try {
     const user = await prisma.user.findUnique({
@@ -156,7 +156,7 @@ export const getProfile = async (req: any, res: Response) => {
       email: user.email,
     });
   } catch (error) {
-    console.error('Error fetching profile:', error);
+    logger.error('Error fetching profile:', error);
     res.status(500).json({ error: 'Failed to fetch profile' });
   }
 };
@@ -167,8 +167,8 @@ export const getProfile = async (req: any, res: Response) => {
  * - firstName and lastName can be updated directly
  * - Email change requires currentPassword for security
  */
-export const updateProfile = async (req: any, res: Response) => {
-  const userId = req.user.userId;
+export const updateProfile = async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
   const { firstName, lastName, email, currentPassword } = req.body;
 
   try {
@@ -224,7 +224,7 @@ export const updateProfile = async (req: any, res: Response) => {
       }
 
       updateData.email = email;
-      console.log(`📧 Email change requested for user ${userId}: ${user.email} → ${email}`);
+      logger.info(`📧 Email change requested for user ${userId}: ${user.email} → ${email}`);
     }
 
     // Perform the update
@@ -238,7 +238,7 @@ export const updateProfile = async (req: any, res: Response) => {
       },
     });
 
-    console.log(`✅ Profile updated for user ${userId}`);
+    logger.info(`✅ Profile updated for user ${userId}`);
 
     res.status(200).json({
       success: true,
@@ -247,7 +247,120 @@ export const updateProfile = async (req: any, res: Response) => {
       email: updatedUser.email,
     });
   } catch (error) {
-    console.error('Error updating profile:', error);
+    logger.error('Error updating profile:', error);
     res.status(500).json({ error: 'Failed to update profile' });
+  }
+};
+
+// ====================================================================
+// =====&gt; Credit System Handlers &lt;=====
+// ====================================================================
+
+/**
+ * GET /api/user/credits
+ * Returns the user's current credit balance and plan
+ */
+export const getCredits = async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: Number(userId) },
+      select: { credits: true, plan: true, role: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Admins have unlimited credits
+    if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') {
+      return res.status(200).json({
+        credits: -1, // -1 signals unlimited to the frontend
+        plan: 'ADMIN',
+        role: user.role,
+      });
+    }
+
+    res.status(200).json({
+      credits: user.credits,
+      plan: user.plan,
+      role: user.role,
+    });
+  } catch (error) {
+    logger.error('Error fetching credits:', error);
+    res.status(500).json({ error: 'Failed to fetch credit balance' });
+  }
+};
+
+// ====================================================================
+// =====> Custom Google OAuth Credentials <=====
+// ====================================================================
+
+/**
+ * GET /api/user/google-credentials
+ * Returns the configured googleClientId (secret is never returned)
+ */
+export const getGoogleCredentials = async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+
+  try {
+    const settings = await prisma.userSettings.findUnique({
+      where: { userId: Number(userId) },
+      select: { googleClientId: true },
+    });
+
+    res.status(200).json({
+      googleClientId: settings?.googleClientId || null,
+      hasCustomCredentials: !!settings?.googleClientId,
+    });
+  } catch (error) {
+    logger.error('Error fetching google credentials:', error);
+    res.status(500).json({ error: 'Failed to fetch google credentials' });
+  }
+};
+
+/**
+ * PUT /api/user/google-credentials
+ * Updates custom Google Client ID and Secret for this user
+ */
+export const updateGoogleCredentials = async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const { googleClientId, googleClientSecret } = req.body;
+
+  try {
+    // Both or neither must be provided. If both null/empty, we remove them.
+    const isClearing = !googleClientId && !googleClientSecret;
+    const isSetting = googleClientId && googleClientSecret;
+
+    if (!isClearing && !isSetting) {
+      return res.status(400).json({ error: 'Both Client ID and Secret must be provided to set custom credentials, or both empty to clear them.' });
+    }
+
+    const data: any = {};
+    if (isClearing) {
+      data.googleClientId = null;
+      data.googleClientSecret = null;
+    } else {
+      data.googleClientId = googleClientId;
+      data.googleClientSecret = encrypt(googleClientSecret); // Encrypt before storing
+    }
+
+    // Upsert user settings
+    await prisma.userSettings.upsert({
+      where: { userId: Number(userId) },
+      update: data,
+      create: {
+        userId: Number(userId),
+        ...data,
+      },
+    });
+
+    logger.info(`${isClearing ? 'Cleared' : 'Updated'} custom Google credentials for user ${userId}`);
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    logger.error('Error updating google credentials:', error);
+    res.status(500).json({ error: 'Failed to update google credentials' });
   }
 };
