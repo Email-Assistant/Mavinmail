@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../utils/prisma.js';
 import { z } from 'zod';
-
-const prisma = new PrismaClient();
+import logger from '../utils/logger.js';
 
 // ============================================================================
 // ZOD VALIDATION SCHEMAS - Type-safe request validation
@@ -87,7 +86,7 @@ export const getActiveModels = async (_req: Request, res: Response) => {
 
         res.status(200).json({ models });
     } catch (error) {
-        console.error('Error fetching models:', error);
+        logger.error('Error fetching models:', error);
         res.status(500).json({ error: 'Failed to fetch models' });
     }
 };
@@ -112,7 +111,7 @@ export const getAllModelsAdmin = async (_req: Request, res: Response) => {
 
         res.status(200).json({ models });
     } catch (error) {
-        console.error('Error fetching models for admin:', error);
+        logger.error('Error fetching models for admin:', error);
         res.status(500).json({ error: 'Failed to fetch models' });
     }
 };
@@ -152,10 +151,10 @@ export const createModel = async (req: Request, res: Response) => {
             },
         });
 
-        console.log(`✅ Admin created new model: ${modelId}`);
+        logger.info(`✅ Admin created new model: ${modelId}`);
         res.status(201).json({ model });
     } catch (error) {
-        console.error('Error creating model:', error);
+        logger.error('Error creating model:', error);
         res.status(500).json({ error: 'Failed to create model' });
     }
 };
@@ -185,13 +184,13 @@ export const updateModel = async (req: Request, res: Response) => {
             data: validation.data,
         });
 
-        console.log(`✅ Admin updated model: ${model.modelId}`);
+        logger.info(`✅ Admin updated model: ${model.modelId}`);
         res.status(200).json({ model });
     } catch (error: any) {
         if (error.code === 'P2025') {
             return res.status(404).json({ error: 'Model not found' });
         }
-        console.error('Error updating model:', error);
+        logger.error('Error updating model:', error);
         res.status(500).json({ error: 'Failed to update model' });
     }
 };
@@ -226,10 +225,10 @@ export const deleteModel = async (req: Request, res: Response) => {
             where: { id },
         });
 
-        console.log(`✅ Admin deleted model: ${model.modelId}`);
+        logger.info(`✅ Admin deleted model: ${model.modelId}`);
         res.status(200).json({ success: true, deletedId: id });
     } catch (error) {
-        console.error('Error deleting model:', error);
+        logger.error('Error deleting model:', error);
         res.status(500).json({ error: 'Failed to delete model' });
     }
 };
@@ -270,13 +269,13 @@ export const setDefaultModel = async (req: Request, res: Response) => {
             }),
         ]);
 
-        console.log(`✅ Admin set default model: ${model.modelId}`);
+        logger.info(`✅ Admin set default model: ${model.modelId}`);
         res.status(200).json({
             success: true,
             defaultModelId: model.modelId,
         });
     } catch (error) {
-        console.error('Error setting default model:', error);
+        logger.error('Error setting default model:', error);
         res.status(500).json({ error: 'Failed to set default model' });
     }
 };

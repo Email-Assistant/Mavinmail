@@ -1,9 +1,8 @@
 // Model Resolution Helper
 // Centralized logic for resolving the AI model to use for any request
 
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from './prisma.js';
+import logger from './logger.js';
 
 /**
  * Resolves the AI model to use for a request.
@@ -21,7 +20,7 @@ const prisma = new PrismaClient();
 export async function resolveUserModel(userId?: number, headerOverride?: string): Promise<string> {
     // 1. If header override is provided (for testing/instant preview), use it
     if (headerOverride) {
-        console.log(`[ModelHelper] Using header override: ${headerOverride}`);
+        logger.info(`[ModelHelper] Using header override: ${headerOverride}`);
         return headerOverride;
     }
 
@@ -34,11 +33,11 @@ export async function resolveUserModel(userId?: number, headerOverride?: string)
             });
 
             if (user?.preferredModel) {
-                console.log(`[ModelHelper] Using user preference: ${user.preferredModel}`);
+                logger.info(`[ModelHelper] Using user preference: ${user.preferredModel}`);
                 return user.preferredModel;
             }
         } catch (error) {
-            console.warn('[ModelHelper] Failed to fetch user preference:', error);
+            logger.warn('[ModelHelper] Failed to fetch user preference:', error);
         }
     }
 
@@ -50,34 +49,35 @@ export async function resolveUserModel(userId?: number, headerOverride?: string)
         });
 
         if (defaultModel?.modelId) {
-            console.log(`[ModelHelper] Using DB default: ${defaultModel.modelId}`);
+            logger.info(`[ModelHelper] Using DB default: ${defaultModel.modelId}`);
             return defaultModel.modelId;
         }
     } catch (error) {
-        console.warn('[ModelHelper] Failed to fetch default model from DB:', error);
+        logger.warn('[ModelHelper] Failed to fetch default model from DB:', error);
     }
 
     // 4. Environment variable defaults
     const envDefault = process.env.DEFAULT_AI_MODEL;
     if (envDefault) {
-        console.log(`[ModelHelper] Using env DEFAULT_AI_MODEL: ${envDefault}`);
+        logger.info(`[ModelHelper] Using env DEFAULT_AI_MODEL: ${envDefault}`);
         return envDefault;
     }
 
     const envFallback = process.env.FALLBACK_AI_MODEL;
     if (envFallback) {
-        console.log(`[ModelHelper] Using env FALLBACK_AI_MODEL: ${envFallback}`);
+        logger.info(`[ModelHelper] Using env FALLBACK_AI_MODEL: ${envFallback}`);
         return envFallback;
     }
 
     // 5. Final hardcoded fallback (should never reach here if env is configured)
-    console.warn('[ModelHelper] No model configured! Using emergency fallback.');
+    logger.warn('[ModelHelper] No model configured! Using emergency fallback.');
     return 'google/gemma-3-4b:free';
 }
 
 /**
- * Helper to extract userId from request object
+ * Helper to extract userId from request object.
+ * Works with both Request and AuthenticatedRequest.
  */
-export function getUserIdFromRequest(req: any): number | undefined {
+export function getUserIdFromRequest(req: { user?: { userId?: number } }): number | undefined {
     return req.user?.userId ? Number(req.user.userId) : undefined;
 }
