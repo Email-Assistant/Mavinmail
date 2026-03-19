@@ -1,8 +1,6 @@
 import { google } from 'googleapis';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../utils/prisma.js';
 import { decrypt } from './encryptionService.js';
-
-const prisma = new PrismaClient();
 
 /**
  * Creates a fully authenticated Google OAuth2 client for a given user.
@@ -17,22 +15,35 @@ export const getAuthenticatedClient = async (userId: number | string) => {
   }
   // 1. Fetch the user's connected account from your database.
   const account = await prisma.connectedAccount.findFirst({
-    where: { 
-      userId: numericUserId, 
-      provider: 'google' 
+    where: {
+      userId: numericUserId,
+      provider: 'google'
     }
+  });
+
+  const settings = await prisma.userSettings.findUnique({
+    where: { userId: numericUserId }
   });
 
   if (!account || !account.accessToken || !account.refreshToken) {
     throw new Error('Google account is not connected or tokens are missing. Please go to the dashboard and reconnect your account.');
   }
 
-  // 2. Create the OAuth client using your application's credentials from the .env file.
-  const oauth2Client = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
-  );
+  // 2. Create the OAuth client using either custom credentials or global fallback.
+  let oauth2Client;
+  if (settings && settings.googleClientId && settings.googleClientSecret) {
+    oauth2Client = new google.auth.OAuth2(
+      settings.googleClientId,
+      decrypt(settings.googleClientSecret),
+      process.env.GOOGLE_REDIRECT_URI || process.env.GOOGLE_CALLBACK_URL
+    );
+  } else {
+    oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI || process.env.GOOGLE_CALLBACK_URL
+    );
+  }
 
   // 3. Decrypt and set BOTH the access token and the refresh token.
   // This is the crucial step that enables automatic token refreshing.
@@ -40,6 +51,6 @@ export const getAuthenticatedClient = async (userId: number | string) => {
     access_token: decrypt(account.accessToken),
     refresh_token: decrypt(account.refreshToken)
   });
-  
+
   return oauth2Client;
 };

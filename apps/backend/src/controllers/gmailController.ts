@@ -1,16 +1,17 @@
-import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { type Response } from 'express';
+import { type AuthenticatedRequest } from '../middleware/authMiddleware.js';
+import prisma from '../utils/prisma.js';
 import { google } from 'googleapis';
 import { decrypt, encrypt } from '../services/encryptionService.js';
-import { summarizeEmailBatch } from '../services/aiService.js'; // Using our new service
+import { summarizeEmailBatch } from '../services/aiService.js';
+import { getEmailBody, cleanEmailBody, categorizeEmail } from '../utils/emailHelpers.js';
 import { OpenRouterService } from '../services/openrouterService.js';
-
-const prisma = new PrismaClient();
+import logger from '../utils/logger.js';
 const gmail = google.gmail('v1');
 
 // feauture 1 code
 
-export const getDailyDigest = async (req: any, res: Response) => {
+export const getDailyDigest = async (req: AuthenticatedRequest, res: Response) => {
   const userId = Number(req.user?.userId);
   if (!Number.isFinite(userId)) {
     return res.status(400).json({ error: 'Invalid user id in token.' });
@@ -19,7 +20,7 @@ export const getDailyDigest = async (req: any, res: Response) => {
   // Get date from query parameter, default to today
   let targetDate: Date;
   if (req.query.date) {
-    targetDate = new Date(req.query.date);
+    targetDate = new Date(req.query.date as string);
     if (isNaN(targetDate.getTime())) {
       return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD.' });
     }
@@ -36,7 +37,7 @@ export const getDailyDigest = async (req: any, res: Response) => {
     });
     if (user?.preferredModel) model = user.preferredModel;
   } catch (e) {
-    console.error("Failed to fetch user preference", e);
+    logger.error("Failed to fetch user preference", e);
   }
 
   if (req.headers['x-model-id']) {
@@ -56,7 +57,7 @@ export const getDailyDigest = async (req: any, res: Response) => {
         break;
       } catch (err: any) {
         if (err.code === 'P1001' || err.message?.includes('Can\'t reach database server') && dbRetries > 1) {
-          console.warn(`[DB] Connection error, retrying... (${dbRetries - 1} left)`);
+          logger.warn(`[DB] Connection error, retrying... (${dbRetries - 1} left)`);
           dbRetries--;
           await new Promise(resolve => setTimeout(resolve, 1500));
         } else {
@@ -88,7 +89,7 @@ export const getDailyDigest = async (req: any, res: Response) => {
     // Automatically refresh tokens if expired
     oauth2Client.on('tokens', async (tokens) => {
       if (tokens.access_token) {
-        console.log('[Gmail] Refreshing access token...');
+        logger.info('[Gmail] Refreshing access token...');
         const newAccessToken = encrypt(tokens.access_token);
         // If a new refresh token is provided, update it too
         // (Google only sends refresh token on first auth or if revoked, but sometimes it rotates)
@@ -106,7 +107,7 @@ export const getDailyDigest = async (req: any, res: Response) => {
             ...(newRefreshToken && { refreshToken: newRefreshToken })
           }
         });
-        console.log('[Gmail] Token refreshed and saved to DB.');
+        logger.info('[Gmail] Token refreshed and saved to DB.');
       }
     });
 
@@ -134,9 +135,9 @@ export const getDailyDigest = async (req: any, res: Response) => {
         auth: oauth2Client,
       });
       messages = listResponse.data.messages || [];
-      console.log(`Found ${messages.length} emails (all categories) for date ${startOfDay.toISOString()}`);
+      logger.info(`Found ${messages.length} emails (all categories) for date ${startOfDay.toISOString()}`);
     } catch (err) {
-      console.error('First query attempt failed:', err);
+      logger.error('First query attempt failed:', err);
     }
 
     // Fallback logic for queries removed/simplified since we want everything now.
@@ -184,10 +185,10 @@ export const getDailyDigest = async (req: any, res: Response) => {
             }
             return false;
           });
-          console.log(`Found ${messages.length} emails after date filtering for date ${startOfDay.toISOString()}`);
+          logger.info(`Found ${messages.length} emails after date filtering for date ${startOfDay.toISOString()}`);
         }
       } catch (err) {
-        console.error('Third query attempt failed:', err);
+        logger.error('Third query attempt failed:', err);
       }
     }
 
@@ -213,7 +214,7 @@ export const getDailyDigest = async (req: any, res: Response) => {
     }
 
     // 4. Fetch details (From, Subject, Body, Labels) for each email
-    console.log(`Processing ${messages.length} emails for digest...`);
+    logger.info(`Processing ${messages.length} emails for digest...`);
     const emailPromises = messages.map(message =>
       gmail.users.messages.get({
         userId: 'me',
@@ -225,38 +226,7 @@ export const getDailyDigest = async (req: any, res: Response) => {
 
     const emailResponses = await Promise.all(emailPromises);
 
-    // Helper function to decode base64url
-    const decodeBase64 = (data: string) => {
-      const buff = Buffer.from(data, 'base64');
-      return buff.toString('utf-8');
-    };
 
-    // Helper to get text body from payload
-    const getEmailBody = (payload: any): string => {
-      if (!payload) return "";
-
-      let body = "";
-
-      // If the body is direclty in the payload (text/plain)
-      if (payload.body && payload.body.data) {
-        return decodeBase64(payload.body.data);
-      }
-
-      // If it's multipart
-      if (payload.parts) {
-        for (const part of payload.parts) {
-          if (part.mimeType === 'text/plain' && part.body && part.body.data) {
-            return decodeBase64(part.body.data);
-          }
-          // Handle nested multipart
-          if (part.parts) {
-            const nestedBody = getEmailBody(part);
-            if (nestedBody) return nestedBody;
-          }
-        }
-      }
-      return "";
-    };
 
     // 5. Format details into structured objects with ID and Category
     const emailData = emailResponses.map(res => {
@@ -267,16 +237,12 @@ export const getDailyDigest = async (req: any, res: Response) => {
       const labelIds = res.data.labelIds || [];
       const id = res.data.id || 'unknown_id';
 
-      // Determine Category
-      let category = 'Primary';
-      if (labelIds.includes('CATEGORY_SOCIAL')) category = 'Social';
-      else if (labelIds.includes('CATEGORY_PROMOTIONS')) category = 'Promotions';
-      else if (labelIds.includes('CATEGORY_UPDATES')) category = 'Updates';
+      const category = categorizeEmail(labelIds);
 
-      console.log(`[Digest Debug] ID: ${id}, Category: ${category}, From: ${from}, Subject: ${subject}`);
+      logger.info(`[Digest Debug] ID: ${id}, Category: ${category}, From: ${from}, Subject: ${subject}`);
 
       const rawBody = getEmailBody(payload);
-      const cleanBody = rawBody.replace(/\s+/g, ' ').substring(0, 5000);
+      const cleanBody = cleanEmailBody(rawBody);
 
       // Return structured object
       return {
@@ -286,14 +252,13 @@ export const getDailyDigest = async (req: any, res: Response) => {
       };
     });
 
-    console.log(`Sending ${emailData.length} emails in a single batch to LLM API...`);
+    logger.info(`Sending ${emailData.length} emails in a single batch to LLM API...`);
 
     // 6. Call our AI service with STRUCTURED data
     const model = (req.headers['x-model-id'] as string) || (req.query.model as string);
-    // @ts-ignore - We are changing the signature of summarizeEmailBatch in the next step
     const digest = await summarizeEmailBatch(emailData, model);
 
-    console.log(`Successfully generated digest for ${emailData.length} emails`);
+    logger.info(`Successfully generated digest for ${emailData.length} emails`);
 
     // Ensure digest is a valid JSON string
     if (typeof digest !== 'string') {
@@ -304,14 +269,14 @@ export const getDailyDigest = async (req: any, res: Response) => {
     try {
       JSON.parse(digest);
     } catch (parseError) {
-      console.error('Invalid JSON from AI service:', digest);
+      logger.error('Invalid JSON from AI service:', digest);
       throw new Error('AI service returned invalid JSON');
     }
 
     res.status(200).json({ summary: digest });
 
   } catch (error: any) {
-    console.error('Error in getDailyDigest controller:', error);
+    logger.error('Error in getDailyDigest controller:', error);
     if (error.code === 401) { // Handle Google Auth errors specifically
       return res.status(401).json({ error: 'Google authentication failed. Please reconnect your account.' });
     }
