@@ -1,0 +1,58 @@
+bug:
+  - any:
+      - title:
+          - "bug"
+      - body:
+          - "bug"
+
+feature:
+  - any:
+      - title:
+          - "feature"
+          - "add"
+
+improvement:
+  - any:
+      - title:
+          - "improve"
+          - "refactor"
+
+error:
+  - any:
+      - title:
+          - "error"
+      - body:
+          - "error"
+
+crash:
+  - any:
+      - title:
+          - "crash"
+      - body:
+          - "crash"
+
+fail:
+  - any:
+      - title:
+          - "fail"
+
+area:extension:
+  - any:
+      - title:
+          - "extension"
+
+area:api:
+  - any:
+      - title:
+          - "api"
+          - "backend"
+
+area:dashboard:
+  - any:
+      - title:
+          - "dashboard"
+
+area:app:
+  - any:
+      - title:
+          - "app"

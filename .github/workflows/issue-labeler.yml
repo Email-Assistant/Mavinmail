@@ -1,0 +1,15 @@
+name: Issue Auto Labeler
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Label issues by title/body keywords
+        uses: dessant/label-actions@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          config-path: .github/issue-labeler.yml
