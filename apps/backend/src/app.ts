@@ -1,35 +1,57 @@
 import express, { type Express, type Request, type Response } from 'express';
 import cors from 'cors';
-import authRoutes from './routes/authRoutes.js';
+import helmet from 'helmet';
 
-// Create an instance of the Express application
+// ─── Route Imports ───────────────────────────────────
+import authRoutes from './routes/authRoutes.js';
+import userRoutes from './routes/userRoutes.js';
+import aiRoutes from './routes/aiRoutes.js';
+import gmailRoutes from './routes/gmailRoutes.js';
+import syncRoutes from './routes/syncRoutes.js';
+import dashboardRoutes from './routes/dashboardRoutes.js';
+import taskRoutes from './routes/tasks.js';
+import adminRoutes from './routes/adminRoutes.js';
+import supportRoutes from './routes/supportRoutes.js';
+import modelRoutes from './routes/modelRoutes.js';
+import systemRoutes from './routes/systemRoutes.js';
+import upgradeRoutes from './routes/upgradeRoutes.js';
+
+// ─── Middleware Imports ──────────────────────────────
+import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger.js';
+
+// ─── App Setup ───────────────────────────────────────
 const app: Express = express();
 
 // Trust the first proxy (essential for rate limiting behind Nginx/Heroku/etc)
 app.set('trust proxy', 1);
 
-// --- Middleware Setup ---
+// ─── Security & Parsing Middleware ───────────────────
+app.use(helmet());
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// 1. Enable Cross-Origin Resource Sharing (CORS)
+// CORS configuration
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl requests)
+      // Allow requests with no origin (mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
 
       const allowedOrigins = [
-        'http://localhost:3002',
         'http://localhost:3000',
-        'http://127.0.0.1:3000',
-        'http://localhost:5173',
         'http://localhost:3001',
+        'http://localhost:3002',
+        'http://localhost:5173',
+        'http://127.0.0.1:3000',
       ];
 
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
-      // Allow ALL chrome extensions (for development flexibility)
+      // Allow all Chrome extensions (development flexibility)
       if (origin.startsWith('chrome-extension://')) {
         return callback(null, true);
       }
@@ -41,59 +63,52 @@ app.use(
   })
 );
 
-app.use(express.json());
+// ─── Documentation ───────────────────────────────────
+app.get('/api-docs.json', (_req: Request, res: Response) => res.json(swaggerSpec));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// --- API Routes ---
-
-// A simple health check route to verify the server is running
-app.get('/', (req: Request, res: Response) => {
-  res.send('AI Email Assistant API is running!');
+// ─── Health Check ────────────────────────────────────
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     summary: Health check endpoint
+ *     description: Returns the status of the API
+ *     responses:
+ *       200:
+ *         description: API is running
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ok
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ */
+app.get('/health', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Mount the authentication routes
+// ─── API Routes ──────────────────────────────────────
 app.use('/api/auth', authRoutes);
-
-import userRoutes from './routes/userRoutes.js';
 app.use('/api/user', userRoutes);
-
-import aiRoutes from './routes/aiRoutes.js'; // <-- Import the new AI routes
-app.use('/api/ai', aiRoutes); // <-- Use the new AI routes
-
-// ... rest of your app.ts
-
-
-import gmailRoutes from './routes/gmailRoutes.js';
-
-// ... other app.use statements
-app.use('/api/gmail', gmailRoutes); // <-- Add this line
-
-
-
-import syncRoutes from './routes/syncRoutes.js';
-// ... other app.use() calls
-app.use('/api/sync', syncRoutes); // <-- ADD THIS
-
-// Dashboard routes for analytics and metrics
-import dashboardRoutes from './routes/dashboardRoutes.js';
+app.use('/api/ai', aiRoutes);
+app.use('/api/gmail', gmailRoutes);
+app.use('/api/sync', syncRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-
-import taskRoutes from './routes/tasks.js';
 app.use('/api/tasks', taskRoutes);
-
-// Admin routes for user management and platform stats
-import adminRoutes from './routes/adminRoutes.js';
 app.use('/api/admin', adminRoutes);
-
-// Support ticket routes for users to create/view their tickets
-import supportRoutes from './routes/supportRoutes.js';
 app.use('/api/support', supportRoutes);
-
-// AI Model management routes
-import modelRoutes from './routes/modelRoutes.js';
 app.use('/api/models', modelRoutes);
-
-// System routes (Public)
-import systemRoutes from './routes/systemRoutes.js';
 app.use('/api/system', systemRoutes);
+app.use('/api/upgrade', upgradeRoutes);
+
+// ─── Error Handling (must be AFTER all routes) ───────
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 export default app;
