@@ -7,15 +7,13 @@ import { getEmailById, EmailData } from '../services/emailService.js';
 import { generateAnswerFromContext, generateGroundedAnswer } from '../services/geminiService.js';
 import { classifyQuery } from '../services/queryClassifierService.js';
 import { executeRetrieval } from '../services/retrievalService.js';
-import { PrismaClient } from '@prisma/client';
 import { logUsage } from '../services/analyticsService.js';
 import { resolveUserModel, getUserIdFromRequest } from '../utils/modelHelper.js';
-
-const prisma = new PrismaClient();
+import { summarizeEmailPrompt, autocompletePrompt, enhanceTextPrompt, draftReplyPrompt } from '../services/promptTemplates.js';
+import logger from '../utils/logger.js';
 
 export const summarizeEmail = async (req: Request, res: Response) => {
   const { text } = req.body;
-  // @ts-ignore
   const userId = getUserIdFromRequest(req);
 
   if (!text) {
@@ -27,38 +25,9 @@ export const summarizeEmail = async (req: Request, res: Response) => {
     const headerOverride = req.headers['x-model-id'] as string | undefined;
     const model = await resolveUserModel(userId, headerOverride);
 
-    console.log('✅ [DEBUG] summarizeEmail - Final Model Used:', model);
+    logger.info('✅ [DEBUG] summarizeEmail - Final Model Used:', model);
 
-    const prompt = `
-You are an intelligent email summarization assistant. Your goal is to extract key information and return it in a structured JSON format.
-
-Input Email:
----
-${text}
----
-
-Instructions:
-1. Analyze the email content.
-2. Extract the following fields:
-   - "email_title": A short, clear title for the email.
-   - "sender": The name or email address of the sender (inferred from context if not explicitly stated, otherwise "Unknown").
-   - "summary": A concise 2-3 sentence summary of the main point.
-   - "action_items": A list of specific actionable tasks or requests (strings). If none, use an empty list.
-   - "important_details": A list of key facts, dates, or deadlines (strings).
-   - "intent": One of "Request", "Informational", "Urgent", "Meeting", "Follow-up", "Other".
-   - "sentiment": One of "Positive", "Neutral", "Negative", "Urgent".
-
-3. Return ONLY valid JSON matching this structure.
-{
-  "email_title": "...",
-  "sender": "...",
-  "summary": "...",
-  "action_items": ["...", "..."],
-  "important_details": ["...", "..."],
-  "intent": "...",
-  "sentiment": "..."
-}
-`;
+    const prompt = summarizeEmailPrompt(text);
 
     const summaryData = await OpenRouterService.generateJSON(prompt, model);
 
@@ -70,7 +39,7 @@ Instructions:
     res.status(200).json({ summary: summaryData });
 
   } catch (error) {
-    console.error('Error summarizing email with AI Service:', error);
+    logger.error('Error summarizing email with AI Service:', error);
     // Log failed attempt
     if (userId) {
       logUsage({ userId: Number(userId), action: 'summarize', success: false });
@@ -86,10 +55,9 @@ Instructions:
 
 export const getAutocomplete = async (req: Request, res: Response) => {
   const { text } = req.body;
-  // @ts-ignore
   const userId = getUserIdFromRequest(req);
 
-  console.log('✅ 3. aiController: Received request to autocomplete text:', text);
+  logger.info('✅ 3. aiController: Received request to autocomplete text:', text);
 
   if (!text || text.length < 10) { // Add a length check on the backend for safety
     return res.status(400).json({ error: 'Text input is too short for autocomplete.' });
@@ -100,7 +68,7 @@ export const getAutocomplete = async (req: Request, res: Response) => {
     const headerOverride = req.headers['x-model-id'] as string | undefined;
     const model = await resolveUserModel(userId, headerOverride);
 
-    const prompt = `You are an AI assistant helping a user write. Your task is to provide a short, single-sentence completion for the text they have started. Do not repeat the user's text in your response. Only provide the new, autocompleted part. Be concise.\n\nUser's text:\n---\n${text}\n---`;
+    const prompt = autocompletePrompt(text);
 
     const suggestion = await OpenRouterService.generateContent(prompt, model);
 
@@ -110,10 +78,10 @@ export const getAutocomplete = async (req: Request, res: Response) => {
     }
 
     res.status(200).json({ suggestion });
-    console.log('✅ 4. aiController: AI API returned raw suggestion:', suggestion);
+    logger.info('✅ 4. aiController: AI API returned raw suggestion:', suggestion);
 
   } catch (error) {
-    console.error('Error getting autocomplete from AI Service:', error);
+    logger.error('Error getting autocomplete from AI Service:', error);
     res.status(500).json({ error: 'Failed to generate autocomplete suggestion.' });
   }
 };
@@ -121,7 +89,7 @@ export const getAutocomplete = async (req: Request, res: Response) => {
 
 //rag
 
-export const askQuestionAboutEmails = async (req: any, res: Response) => {
+export const askQuestionAboutEmails = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
 
   const { question, useRag } = req.body; // Expect useRag boolean
@@ -131,7 +99,7 @@ export const askQuestionAboutEmails = async (req: any, res: Response) => {
   const headerOverride = req.headers['x-model-id'] as string | undefined;
   const model = await resolveUserModel(userId, headerOverride);
 
-  console.log('✅ [DEBUG] askQuestion Request:', { question, useRag, model });
+  logger.info('✅ [DEBUG] askQuestion Request:', { question, useRag, model });
 
   if (!question) return res.status(400).json({ message: 'Question is required.' });
 
@@ -140,7 +108,7 @@ export const askQuestionAboutEmails = async (req: any, res: Response) => {
     // MODE 1: GENERAL CHAT (RAG DISABLED)
     // ------------------------------------------------------------------
     if (!useRag) {
-      console.log('ℹ️ RAG Disabled. Using General Chat Mode.');
+      logger.info('ℹ️ RAG Disabled. Using General Chat Mode.');
       const prompt = `
 You are a helpful AI assistant.
 Answer the following question to the best of your ability.
@@ -160,17 +128,17 @@ Question: ${question}
     // ------------------------------------------------------------------
     // MODE 2: RAG ENABLED (Search Inbox) - ENHANCED PIPELINE
     // ------------------------------------------------------------------
-    console.log('🔍 RAG Enabled. Processing query with enhanced pipeline...');
+    logger.info('🔍 RAG Enabled. Processing query with enhanced pipeline...');
 
     // 1️⃣ CLASSIFY QUERY - Determine intent and extract entities
     const classification = await classifyQuery(question);
-    console.log(`📊 Query Classification: ${classification.intent} (confidence: ${classification.confidence})`);
+    logger.info(`📊 Query Classification: ${classification.intent} (confidence: ${classification.confidence})`);
 
     // 2️⃣ RETRIEVE - Use appropriate retrieval strategy
     const retrievalResult = await executeRetrieval(String(userId), question, classification);
 
     if (!retrievalResult.success || retrievalResult.emails.length === 0) {
-      console.log('❌ No relevant emails found');
+      logger.info('❌ No relevant emails found');
       return res.json({
         answer: "I couldn't find any relevant information in your indexed emails to answer that question. Try syncing more emails or rephrasing your question.",
         metadata: {
@@ -181,7 +149,7 @@ Question: ${question}
       });
     }
 
-    console.log(`✅ Retrieved ${retrievalResult.emails.length} relevant emails`);
+    logger.info(`✅ Retrieved ${retrievalResult.emails.length} relevant emails`);
 
     // 3️⃣ BUILD CONTEXT - Format emails for answer generation
     const context = retrievalResult.emails
@@ -236,7 +204,7 @@ ${email.content}
     });
 
   } catch (error) {
-    console.error('Ask question error:', error);
+    logger.error('Ask question error:', error);
     res.status(500).json({ message: 'Failed to get an answer.' });
   }
 };
@@ -244,7 +212,6 @@ ${email.content}
 
 export const enhanceText = async (req: Request, res: Response) => {
   const { text, type } = req.body;
-  // @ts-ignore
   const userId = getUserIdFromRequest(req);
 
   if (!text) {
@@ -256,14 +223,7 @@ export const enhanceText = async (req: Request, res: Response) => {
     const headerOverride = req.headers['x-model-id'] as string | undefined;
     const model = await resolveUserModel(userId, headerOverride);
 
-    let instruction = "Improve the writing of the following text.";
-    if (type === 'formal') instruction = "Rewrite the following text to be more formal and professional.";
-    else if (type === 'concise') instruction = "Rewrite the following text to be more concise and to the point.";
-    else if (type === 'casual') instruction = "Rewrite the following text to be more casual and friendly.";
-    else if (type === 'clarity') instruction = "Rewrite the following text to improve clarity and flow.";
-    else if (type === 'more') instruction = "Expand on the following text, adding more detail and context.";
-
-    const prompt = `${instruction}\n\nText:\n---\n${text}\n---\n\nReturn only the enhanced text, nothing else.`;
+    const prompt = enhanceTextPrompt(text, type);
 
     const enhancedText = await OpenRouterService.generateContent(prompt, model);
 
@@ -274,7 +234,7 @@ export const enhanceText = async (req: Request, res: Response) => {
 
     res.status(200).json({ enhancedText });
   } catch (error) {
-    console.error('Error enhancing text:', error);
+    logger.error('Error enhancing text:', error);
     res.status(500).json({ error: 'Failed to enhance text.' });
   }
 };
@@ -282,7 +242,6 @@ export const enhanceText = async (req: Request, res: Response) => {
 // draft reply
 export const draftReply = async (req: Request, res: Response) => {
   const { emailContent, userPrompt } = req.body;
-  // @ts-ignore
   const userId = getUserIdFromRequest(req);
 
   if (!emailContent) {
@@ -294,18 +253,7 @@ export const draftReply = async (req: Request, res: Response) => {
     const headerOverride = req.headers['x-model-id'] as string | undefined;
     const model = await resolveUserModel(userId, headerOverride);
 
-    const prompt = `
-You are a professional email assistant.
-Context (The email thread):
----
-${emailContent}
----
-
-User Instruction:
-${userPrompt || "Draft a suitable reply based on the context."}
-
-Draft a professional and polite reply to the above email.
-`;
+    const prompt = draftReplyPrompt(emailContent, userPrompt);
 
     const reply = await OpenRouterService.generateContent(prompt, model);
 
@@ -316,7 +264,7 @@ Draft a professional and polite reply to the above email.
 
     res.status(200).json({ reply });
   } catch (error) {
-    console.error('Error in draftReply:', error);
+    logger.error('Error in draftReply:', error);
     res.status(500).json({ error: 'Failed to generate draft reply.' });
   }
 };
@@ -327,14 +275,13 @@ Draft a professional and polite reply to the above email.
  */
 export const askQuestionStream = async (req: Request, res: Response) => {
   const { question, useRag = true } = req.body;
-  // @ts-ignore
   const userId = getUserIdFromRequest(req);
 
   // Resolve model
   const headerOverride = req.headers['x-model-id'] as string | undefined;
   const model = await resolveUserModel(userId, headerOverride);
 
-  console.log('🌊 [STREAMING] askQuestionStream Request:', { question, useRag, model });
+  logger.info('🌊 [STREAMING] askQuestionStream Request:', { question, useRag, model });
 
   if (!question) {
     return res.status(400).json({ message: 'Question is required.' });
@@ -403,7 +350,7 @@ Answer:`
     }
 
   } catch (error) {
-    console.error('Streaming error:', error);
+    logger.error('Streaming error:', error);
     res.write(`data: ${JSON.stringify({ type: 'error', message: 'Failed to generate answer' })}\n\n`);
     res.end();
   }

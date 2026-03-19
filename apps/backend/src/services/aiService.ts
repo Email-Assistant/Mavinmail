@@ -1,5 +1,6 @@
 import { OpenRouterService } from "./openrouterService.js";
 import { resolveUserModel } from "../utils/modelHelper.js";
+import logger from '../utils/logger.js';
 
 /**
  * Interface for structured email input
@@ -47,7 +48,7 @@ export const summarizeEmailBatch = async (emailData: EmailInput[], model?: strin
     throw new Error("No emails provided for summarization.");
   }
 
-  console.log(`[AI Service] Processing ${emailData.length} emails in batches of ${BATCH_SIZE}...`);
+  logger.info(`[AI Service] Processing ${emailData.length} emails in batches of ${BATCH_SIZE}...`);
 
   // Split into batches
   const batches: EmailInput[][] = [];
@@ -55,21 +56,21 @@ export const summarizeEmailBatch = async (emailData: EmailInput[], model?: strin
     batches.push(emailData.slice(i, i + BATCH_SIZE));
   }
 
-  console.log(`[AI Service] Created ${batches.length} batches`);
+  logger.info(`[AI Service] Created ${batches.length} batches`);
 
   // Process each batch
   const allItems: DigestItem[] = [];
 
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     const batch = batches[batchIndex];
-    console.log(`[AI Service] Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} emails)...`);
+    logger.info(`[AI Service] Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} emails)...`);
 
     try {
       const batchItems = await processBatch(batch, model);
       allItems.push(...batchItems);
-      console.log(`[AI Service] Batch ${batchIndex + 1} complete: got ${batchItems.length} summaries`);
+      logger.info(`[AI Service] Batch ${batchIndex + 1} complete: got ${batchItems.length} summaries`);
     } catch (error) {
-      console.error(`[AI Service] Batch ${batchIndex + 1} failed:`, error);
+      logger.error(`[AI Service] Batch ${batchIndex + 1} failed:`, error);
       // Add placeholder items for failed emails
       for (const email of batch) {
         allItems.push({
@@ -108,10 +109,10 @@ export const summarizeEmailBatch = async (emailData: EmailInput[], model?: strin
     sections
   };
 
-  console.log(`[AI Service] Final digest: ${allItems.length} items in ${sections.length} sections`);
+  logger.info(`[AI Service] Final digest: ${allItems.length} items in ${sections.length} sections`);
 
   if (allItems.length !== emailData.length) {
-    console.warn(`[AI Service WARNING] Count mismatch: expected ${emailData.length}, got ${allItems.length}`);
+    logger.warn(`[AI Service WARNING] Count mismatch: expected ${emailData.length}, got ${allItems.length}`);
   }
 
   return JSON.stringify(digest);
@@ -159,7 +160,7 @@ CRITICAL RULES:
   // Extract JSON array
   const arrayMatch = rawContent.match(/\[[\s\S]*\]/);
   if (!arrayMatch) {
-    console.error("[AI Service] No JSON array found in response:", rawContent.substring(0, 500));
+    logger.error("[AI Service] No JSON array found in response:", rawContent.substring(0, 500));
     throw new Error("Invalid response format");
   }
 
@@ -171,7 +172,7 @@ CRITICAL RULES:
     const missingIds = emailIds.filter(id => !returnedIds.has(id));
 
     if (missingIds.length > 0) {
-      console.warn(`[AI Service] Missing ${missingIds.length} emails: ${missingIds.join(', ')}`);
+      logger.warn(`[AI Service] Missing ${missingIds.length} emails: ${missingIds.join(', ')}`);
 
       // Add placeholder items for missing emails
       for (const missingId of missingIds) {
@@ -198,7 +199,7 @@ CRITICAL RULES:
 
     return items;
   } catch (e) {
-    console.error("[AI Service] Failed to parse JSON:", arrayMatch[0].substring(0, 500));
+    logger.error("[AI Service] Failed to parse JSON:", arrayMatch[0].substring(0, 500));
     throw new Error("Failed to parse response");
   }
 }
