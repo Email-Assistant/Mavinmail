@@ -14,6 +14,7 @@ import { QueryClassification, QueryIntent } from './queryClassifierService.js';
 import { getEmailById } from './emailService.js';
 import { rerankResults } from './cohereService.js';
 import { ScoredPineconeRecord } from '@pinecone-database/pinecone';
+import logger from '../utils/logger.js';
 
 // Result types
 export interface RetrievalResult {
@@ -52,13 +53,13 @@ const structuredRetrieval = async (
     query: string,
     classification: QueryClassification
 ): Promise<{ chunks: ScoredPineconeRecord<PineconeEmailMetadata>[]; emailMap: Map<string, PineconeEmailMetadata & { score: number }> }> => {
-    console.log('[Retrieval] Structured query with filters:', classification.filters);
+    logger.info('[Retrieval] Structured query with filters:', classification.filters);
 
     const hasFilters = Object.keys(classification.filters).length > 0;
 
     // 🛑 FALLBACK: If classifier said "structured" but found no filters, force SEMANTIC search.
     if (!hasFilters) {
-        console.warn('[Retrieval] ⚠️ Structured intent but NO filters found. Falling back to semantic retrieval.');
+        logger.warn('[Retrieval] ⚠️ Structured intent but NO filters found. Falling back to semantic retrieval.');
         // Call semantic retrieval directly here
         return semanticRetrieval(userId, query, classification);
     }
@@ -81,7 +82,7 @@ const semanticRetrieval = async (
     query: string,
     classification: QueryClassification
 ): Promise<{ chunks: ScoredPineconeRecord<PineconeEmailMetadata>[]; emailMap: Map<string, PineconeEmailMetadata & { score: number }> }> => {
-    console.log('[Retrieval] Semantic query');
+    logger.info('[Retrieval] Semantic query');
 
     const hasFilters = Object.keys(classification.filters).length > 0;
 
@@ -89,7 +90,7 @@ const semanticRetrieval = async (
 
     if (hasFilters) {
         // Pre-filter then vector search
-        console.log('[Retrieval] With pre-filters:', classification.filters);
+        logger.info('[Retrieval] With pre-filters:', classification.filters);
         const queryVector = await embedQuery(query);
         chunks = await queryWithFilters(userId, classification.filters, {
             vector: queryVector,
@@ -102,7 +103,7 @@ const semanticRetrieval = async (
 
     // 🚀 RERANKING STEP - Improve precision by reordering results
     if (chunks.length > 3) {
-        console.log(`[Retrieval] Reranking ${chunks.length} chunks...`);
+        logger.info(`[Retrieval] Reranking ${chunks.length} chunks...`);
         try {
             // Use chunkText + subject + from for better reranking relevance
             const documents = chunks.map(c => ({
@@ -124,9 +125,9 @@ const semanticRetrieval = async (
                 }
             }
             chunks = rerankedChunks.length > 0 ? rerankedChunks : chunks;
-            console.log(`[Retrieval] Reranked to ${chunks.length} chunks`);
+            logger.info(`[Retrieval] Reranked to ${chunks.length} chunks`);
         } catch (rerankError) {
-            console.warn('[Retrieval] Reranking failed, using original order:', rerankError);
+            logger.warn('[Retrieval] Reranking failed, using original order:', rerankError);
         }
     }
 
@@ -143,7 +144,7 @@ const hybridRetrieval = async (
     query: string,
     classification: QueryClassification
 ): Promise<{ chunks: ScoredPineconeRecord<PineconeEmailMetadata>[]; emailMap: Map<string, PineconeEmailMetadata & { score: number }> }> => {
-    console.log('[Retrieval] Hybrid query');
+    logger.info('[Retrieval] Hybrid query');
 
     // Step 1: Get filtered results with vector search
     const queryVector = await embedQuery(query);
@@ -164,7 +165,7 @@ const aggregationRetrieval = async (
     userId: string,
     classification: QueryClassification
 ): Promise<{ emailMap: Map<string, PineconeEmailMetadata & { score: number }>; aggregation: AggregationResult }> => {
-    console.log('[Retrieval] Aggregation query');
+    logger.info('[Retrieval] Aggregation query');
 
     const chunks = await queryWithFilters(userId, classification.filters, {
         topK: 100,  // Get more for aggregation
@@ -218,7 +219,7 @@ export const executeRetrieval = async (
     classification: QueryClassification
 ): Promise<RetrievalResult> => {
     const startTime = Date.now();
-    console.log(`[Retrieval] Executing ${classification.intent} retrieval for user ${userId}`);
+    logger.info(`[Retrieval] Executing ${classification.intent} retrieval for user ${userId}`);
 
     try {
         let emailMap: Map<string, PineconeEmailMetadata & { score: number }>;
@@ -259,7 +260,7 @@ export const executeRetrieval = async (
         // Instead of using only matched chunks, fetch ALL chunks for these emails
         const topEmailIds = emailIds.slice(0, 5);  // Limit to 5 for context
 
-        console.log(`[Retrieval] Fetching complete content for ${topEmailIds.length} emails`);
+        logger.info(`[Retrieval] Fetching complete content for ${topEmailIds.length} emails`);
         const allChunksMap = await fetchAllChunksForEmails(userId, topEmailIds);
 
         // Build result using complete email content from all chunks
@@ -287,7 +288,7 @@ export const executeRetrieval = async (
         }
 
         const latencyMs = Date.now() - startTime;
-        console.log(`[Retrieval] Found ${emails.length} emails in ${latencyMs}ms`);
+        logger.info(`[Retrieval] Found ${emails.length} emails in ${latencyMs}ms`);
 
         return {
             success: true,
@@ -300,7 +301,7 @@ export const executeRetrieval = async (
         };
 
     } catch (error) {
-        console.error('[Retrieval] Error:', error);
+        logger.error('[Retrieval] Error:', error);
         return {
             success: false,
             intent: classification.intent,
