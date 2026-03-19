@@ -1,4 +1,5 @@
 import axios from "axios";
+import logger from '../utils/logger.js';
 
 export class OpenRouterService {
     private static apiKey = process.env.OPENROUTER_API_KEY;
@@ -14,7 +15,7 @@ export class OpenRouterService {
      */
     static async generateContent(prompt: string, model?: string): Promise<string> {
         const selectedModel = model || this.defaultModel;
-        console.log(`[OpenRouter] Sending request to model: ${selectedModel}`);
+        logger.info(`[OpenRouter] Sending request to model: ${selectedModel}`);
 
         const maxRetries = 3;
         let retryCount = 0;
@@ -44,23 +45,23 @@ export class OpenRouterService {
                 );
 
                 // Debug: log raw response structure
-                console.log(`[OpenRouter] Response status: ${response.status}`);
+                logger.info(`[OpenRouter] Response status: ${response.status}`);
 
                 // Validate response structure
                 if (!response.data) {
-                    console.error("[OpenRouter] Empty response data");
+                    logger.error("[OpenRouter] Empty response data");
                     throw new Error("Empty response from OpenRouter");
                 }
 
                 // Check for API-level errors
                 if (response.data.error) {
-                    console.error("[OpenRouter] API Error:", response.data.error);
+                    logger.error("[OpenRouter] API Error:", response.data.error);
                     throw new Error(`OpenRouter API Error: ${response.data.error.message || JSON.stringify(response.data.error)}`);
                 }
 
                 // Validate choices array
                 if (!response.data.choices || !Array.isArray(response.data.choices) || response.data.choices.length === 0) {
-                    console.error("[OpenRouter] Invalid response structure:", JSON.stringify(response.data, null, 2));
+                    logger.error("[OpenRouter] Invalid response structure:", JSON.stringify(response.data, null, 2));
                     throw new Error("Invalid response structure: missing choices array");
                 }
 
@@ -79,11 +80,11 @@ export class OpenRouterService {
                 }
 
                 if (!content) {
-                    console.error("[OpenRouter] No content in response choice:", JSON.stringify(choice, null, 2));
+                    logger.error("[OpenRouter] No content in response choice:", JSON.stringify(choice, null, 2));
                     throw new Error("No content in OpenRouter response");
                 }
 
-                console.log(`[OpenRouter] Success! Got ${content.length} chars`);
+                logger.info(`[OpenRouter] Success! Got ${content.length} chars`);
                 return content;
 
             } catch (err: any) {
@@ -91,31 +92,31 @@ export class OpenRouterService {
 
                 // Log API key for debugging (prefix only)
                 const keyPrefix = this.apiKey ? this.apiKey.substring(0, 12) + "..." : "UNDEFINED";
-                console.log(`[OpenRouter Debug] API Key prefix: ${keyPrefix}`);
+                logger.info(`[OpenRouter Debug] API Key prefix: ${keyPrefix}`);
 
                 // Handle rate limiting
                 if (err.response?.status === 429) {
                     retryCount++;
                     const delay = Math.pow(2, retryCount) * 1000;
-                    console.warn(`[OpenRouter] Rate limited (429). Retry ${retryCount}/${maxRetries} in ${delay}ms`);
+                    logger.warn(`[OpenRouter] Rate limited (429). Retry ${retryCount}/${maxRetries} in ${delay}ms`);
                     await new Promise(resolve => setTimeout(resolve, delay));
                     continue;
                 }
 
                 // Handle model not found - try fallback
                 if (err.response?.status === 404 || err.response?.status === 400) {
-                    console.error(`[OpenRouter] Model error (${err.response?.status}):`, err.response?.data);
+                    logger.error(`[OpenRouter] Model error (${err.response?.status}):`, err.response?.data);
 
                     // Try fallback model once
                     if (selectedModel !== this.fallbackModel && this.fallbackModel && retryCount === 0) {
-                        console.log(`[OpenRouter] Trying fallback model: ${this.fallbackModel}`);
+                        logger.info(`[OpenRouter] Trying fallback model: ${this.fallbackModel}`);
                         retryCount++;
                         return this.generateContent(prompt, this.fallbackModel);
                     }
                 }
 
                 // Log the full error for debugging
-                console.error("[OpenRouter] Request failed:", {
+                logger.error("[OpenRouter] Request failed:", {
                     status: err.response?.status,
                     data: err.response?.data,
                     message: err.message
@@ -149,9 +150,86 @@ export class OpenRouterService {
         try {
             return JSON.parse(cleaned);
         } catch (e) {
-            console.error("[OpenRouter] Failed to parse JSON. Raw output:", rawContent.substring(0, 500));
-            console.error("Cleaned output was:", cleaned.substring(0, 500));
+            logger.error("[OpenRouter] Failed to parse JSON. Raw output:", rawContent.substring(0, 500));
+            logger.error("Cleaned output was:", cleaned.substring(0, 500));
             throw new Error("AI returned invalid JSON.");
+        }
+    }
+
+    /**
+     * 🚀 STREAMING: Generates text content using SSE streaming.
+     * Calls the callback with each text chunk as it arrives.
+     * @param prompt The prompt to send to the AI.
+     * @param onChunk Callback function called with each text chunk.
+     * @param model The model to use (optional).
+     */
+    static async generateContentStream(
+        prompt: string,
+        onChunk: (chunk: string) => void,
+        model?: string
+    ): Promise<string> {
+        const selectedModel = model || this.defaultModel;
+        logger.info(`[OpenRouter] Starting stream to model: ${selectedModel}`);
+
+        try {
+            const response = await axios.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                {
+                    model: selectedModel,
+                    messages: [{ role: "user", content: prompt }],
+                    stream: true,  // Enable streaming
+                },
+                {
+                    headers: {
+                        "Authorization": `Bearer ${this.apiKey}`,
+                        "HTTP-Referer": "http://localhost:3000",
+                        "X-Title": "Mavinmail Email Assistant"
+                    },
+                    responseType: 'stream',
+                    timeout: 120000
+                }
+            );
+
+            let fullContent = '';
+
+            return new Promise((resolve, reject) => {
+                response.data.on('data', (chunk: Buffer) => {
+                    const lines = chunk.toString().split('\n').filter((line: string) => line.trim());
+
+                    for (const line of lines) {
+                        if (line === 'data: [DONE]') {
+                            continue;
+                        }
+
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const json = JSON.parse(line.slice(6));
+                                const content = json.choices?.[0]?.delta?.content;
+                                if (content) {
+                                    fullContent += content;
+                                    onChunk(content);  // Call callback with chunk
+                                }
+                            } catch (e) {
+                                // Ignore parse errors for individual chunks
+                            }
+                        }
+                    }
+                });
+
+                response.data.on('end', () => {
+                    logger.info(`[OpenRouter] Stream complete, ${fullContent.length} chars`);
+                    resolve(fullContent);
+                });
+
+                response.data.on('error', (err: Error) => {
+                    logger.error('[OpenRouter] Stream error:', err);
+                    reject(err);
+                });
+            });
+
+        } catch (err: any) {
+            logger.error("[OpenRouter] Streaming request failed:", err.message);
+            throw new Error(`OpenRouter streaming failed: ${err.message}`);
         }
     }
 }

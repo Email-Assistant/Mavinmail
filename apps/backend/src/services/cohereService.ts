@@ -1,4 +1,5 @@
 import { CohereClient } from 'cohere-ai';
+import logger from '../utils/logger.js';
 
 const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
 const EMBEDDING_MODEL = 'embed-english-v3.0';
@@ -93,7 +94,7 @@ export const rerankResults = async (
 
     throw new Error("Unexpected rerank response format from Cohere.");
   } catch (error) {
-    console.error('[Cohere Rerank] Error:', error);
+    logger.error('[Cohere Rerank] Error:', error);
     // Fallback: return original order
     return documents.slice(0, topK).map((doc, index) => ({
       index,
