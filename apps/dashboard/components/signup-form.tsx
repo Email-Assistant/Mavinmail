@@ -15,6 +15,10 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { signIn } from "next-auth/react"
 
+const SIGNUP_API_BASE_URL = (
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001/api"
+).replace(/\/$/, "")
+
 export function SignupForm({
     className,
     ...props
@@ -36,7 +40,7 @@ export function SignupForm({
 
         try {
             // 1. Register with backend
-            const res = await fetch("http://localhost:5001/api/auth/signup", {
+            const res = await fetch(`${SIGNUP_API_BASE_URL}/auth/signup`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, password }),
