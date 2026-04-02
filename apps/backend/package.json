@@ -41,6 +41,7 @@
     "bullmq": "^5.66.5",
     "cohere-ai": "^7.19.0",
     "cors": "^2.8.5",
+    "express": "^5.1.0",
     "express-rate-limit": "^8.2.1",
     "googleapis": "^160.0.0",
     "helmet": "^8.1.0",
