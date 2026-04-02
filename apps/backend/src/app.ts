@@ -15,6 +15,7 @@ import supportRoutes from './routes/supportRoutes.js';
 import modelRoutes from './routes/modelRoutes.js';
 import systemRoutes from './routes/systemRoutes.js';
 import upgradeRoutes from './routes/upgradeRoutes.js';
+import { env } from './config/env.js';
 
 // ─── Middleware Imports ──────────────────────────────
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
@@ -32,6 +33,24 @@ app.use(helmet());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
+const allowedOrigins = new Set([
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+]);
+
+if (env.DASHBOARD_URL) {
+  allowedOrigins.add(env.DASHBOARD_URL.replace(/\/$/, ''));
+}
+
+if (env.CORS_ORIGINS) {
+  for (const origin of env.CORS_ORIGINS.split(',').map((value) => value.trim()).filter(Boolean)) {
+    allowedOrigins.add(origin.replace(/\/$/, ''));
+  }
+}
+
 // CORS configuration
 app.use(
   cors({
@@ -39,15 +58,9 @@ app.use(
       // Allow requests with no origin (mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
 
-      const allowedOrigins = [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://localhost:3002',
-        'http://localhost:5173',
-        'http://127.0.0.1:3000',
-      ];
+      const normalizedOrigin = origin.replace(/\/$/, '');
 
-      if (allowedOrigins.includes(origin)) {
+      if (allowedOrigins.has(normalizedOrigin)) {
         return callback(null, true);
       }
 
